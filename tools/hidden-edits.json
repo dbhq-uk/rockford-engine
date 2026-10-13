@@ -1,0 +1,179 @@
+{
+ "luck": {
+  "160,80": {
+   "op": "shift",
+   "from": "176,80",
+   "dx": 0,
+   "dy": -2,
+   "why": "landscape heart card: frame a is frame b two rows higher (the original differs only in shade); the earlier edit left it 30% wider than b",
+   "done": true
+  },
+  "160,96": {
+   "op": "shift",
+   "from": "176,96",
+   "dx": 0,
+   "dy": -2,
+   "why": "evil worm tail RIGHT frame a is the same landscape card as frame b, two rows higher",
+   "done": true
+  },
+  "196,4": {
+   "op": "halfswap",
+   "from": "132,4",
+   "why": "timed wall frame 2: frame 0 with its rows swapped, and the four gleam pixels dark green (0,170,0 in the original), not yellow",
+   "done": true,
+   "recolor": {
+    "from": [
+     254,
+     248,
+     60
+    ],
+    "to": [
+     20,
+     150,
+     30
+    ],
+    "tol": 50
+   }
+  },
+  "224,112": {
+   "op": "edit",
+   "from": "208,112",
+   "prompt": "This is a game sprite of a dark red door, hinged on the left and opened part way, with a round dark red ring on its pink panel and a spiral scroll below it. Open the door further: make the pink door slab about two thirds as wide as it is now, with the ring a little smaller, and leave the opening on the right empty and dark. Keep the ring, not a spade.",
+   "why": "frame 2 of the exit: narrower than frame 1, ring not a spade",
+   "done": true
+  }
+ },
+ "scuba": {
+  "240,128": {
+   "op": "copy",
+   "from": "208,128",
+   "why": "evil egg count 4: the core is the same size as count 2 in the same ball",
+   "done": true
+  },
+  "256,112": {
+   "op": "edit",
+   "from": "272,112",
+   "prompt": "This is a game sprite: a cyan bubble with a magenta kernel in its centre. Make the kernel smaller, about half its current width, a small magenta cross with a pale highlight. Keep the bubble exactly the same size, shape, colour, outline and shading, in exactly the same position.",
+   "why": "good egg count 1: only the kernel changes size",
+   "done": true
+  }
+ },
+ "music": {
+  "176,112": {
+   "op": "edit",
+   "from": "160,112",
+   "prompt": "This is a game sprite of a flame in pink, dark red and yellow with grey and white flecks. Make it the widest, fullest and most ragged flame of a flickering set: spread it about a fifth wider so it fills the full width of the square, with more separate ragged tongues and more see-through gaps at the edges.",
+   "why": "fire frame 3 is the widest",
+   "done": true
+  },
+  "224,144": {
+   "op": "edit",
+   "prompt": "This is a game sprite of a burst of sparks. Erase every loose fragment and petal. Leave only ONE tiny compact knot of pink sparks in the exact centre, about one tenth of the width of the square, with everything else completely empty.",
+   "why": "blast to space frame 2 is one tiny knot",
+   "done": true
+  },
+  "288,176": {
+   "op": "edit",
+   "prompt": "This is a game sprite of a thin brown pipe tap. Erase the long thin vertical line down the far left edge of the tile. Keep every other part of the pipework exactly as it is.",
+   "why": "only frame 0 has the long thin line down the far left",
+   "done": true
+  },
+  "48,80": {
+   "op": "copy",
+   "from": "32,80",
+   "why": "good worm head RIGHT frame b: the same upright treble clef as frame a, only a glint changes",
+   "done": true
+  }
+ },
+ "miner": {
+  "192,160": {
+   "op": "edit",
+   "from": "208,160",
+   "prompt": "This is a game sprite of a red crumbly ore lump with yellow glints, with a few blue and cyan fragments at its left. Remove most of the blue and cyan fragments and every trace of a whirlpool or spiral: leave only two or three tiny blue flecks at the left edge, so it is almost entirely the plain red ore lump.",
+   "why": "chain frame 3 is nearest the boulder, fewer flecks than frame 2",
+   "done": true
+  },
+  "256,64": {
+   "op": "edit",
+   "from": "272,64",
+   "prompt": "This is a game sprite of a standing bird in profile in red and yellow. Keep the whole upper body, neck, head and plume exactly as they are. Change ONLY the foot: make the foot wide and flat, about ten units wide on a sixteen unit tile, with a yellow leg.",
+   "why": "fire tap frame 0: the upper body must match frames 1 and 3, only the foot changes",
+   "done": true
+  },
+  "288,64": {
+   "op": "edit",
+   "from": "272,64",
+   "prompt": "This is a game sprite of a standing bird in profile in red and yellow. Keep the whole upper body, neck, head and plume exactly as they are. Change ONLY the foot: make it the smallest of a set, a short leg and a small foot only about four units wide on a sixteen unit tile.",
+   "why": "fire tap frame 2: the same bird, the foot at its smallest",
+   "done": true
+  },
+  "288,48": {
+   "op": "edit",
+   "from": "272,48",
+   "prompt": "This is a game sprite of a cartoon miner in a grey hard hat with a glowing yellow lamp, a red face, grey overalls and brown boots, with his eyes shut. Open his eyes so they look straight ahead. Bend the arm on the RIGHT-hand side of the picture inwards across his body so a small pink hand rests at his belt, pointing inward. Leave the arm on the LEFT-hand side of the picture hanging exactly as it is. Keep his head, hat, lamp, clothes and proportions exactly the same.",
+   "why": "idle B frame 18: eyes open, the right hand at the hip",
+   "done": true
+  },
+  "304,48": {
+   "op": "edit",
+   "from": "272,48",
+   "prompt": "This is a game sprite of a cartoon miner in a grey hard hat with a glowing yellow lamp, a red face, grey overalls and brown boots, with his eyes shut. Open his eyes so they look straight ahead. Bring the arm on the RIGHT-hand side of the picture further in, so a larger pink hand lies across his belly just right of centre. Leave the arm on the LEFT-hand side of the picture hanging exactly as it is. Keep his head, hat, lamp, clothes and proportions exactly the same.",
+   "why": "idle B frame 19: the arm brought further in",
+   "done": true
+  },
+  "48,80": {
+   "op": "copy",
+   "from": "32,80",
+   "why": "good worm head RIGHT frame b: only the smoke and wheel rods shift",
+   "done": true
+  }
+ },
+ "cook": {
+  "48,80": {
+   "op": "edit",
+   "from": "32,80",
+   "prompt": "This is a cheeseburger creature facing right with eyes. Make it blink: remove the violet cross-shaped pupil from the eye so the eye is plain blue. Keep the bun, filling and teeth exactly as they are.",
+   "done": true
+  },
+  "80,80": {
+   "op": "edit",
+   "from": "64,80",
+   "prompt": "This is a cheeseburger creature facing the viewer with two blue eyes. Make it blink: remove both violet T-shaped pupils so each eye is plain blue. Keep the nose, the four teeth and everything else exactly as they are.",
+   "done": true
+  }
+ },
+ "cowboy": {
+  "304,80": {
+   "op": "edit",
+   "from": "288,80",
+   "prompt": "This is a covered wagon seen from the side with two wheels. Turn the wheels one step: change the spoke pattern of the left wheel to an X-shaped (diagonal) spoke pattern and the right wheel to a plus-shaped (upright) spoke pattern. Keep the canvas, the wagon body and the wheel size exactly as they are.",
+   "done": true
+  },
+  "48,96": {
+   "op": "edit",
+   "from": "32,96",
+   "prompt": "This is a steam locomotive facing right with smoke. Move it on one step: let the puffs of smoke drift slightly higher and apart, and turn the wheels a step so their spokes sit at a different angle. Keep the engine, its size and its colours exactly as they are.",
+   "done": true
+  }
+ },
+ "hunter": {
+  "144,80": {
+   "op": "edit",
+   "from": "128,80",
+   "prompt": "This is a small curved tail stub. Bend it the other way: make it a crescent whose middle bows towards the RIGHT of the picture, with the tip leaning left. Keep the same colours, length and thickness.",
+   "done": true
+  },
+  "208,80": {
+   "op": "edit",
+   "from": "192,80",
+   "prompt": "This is a small tail stub pointing up with its thick end at the bottom. Bow it into a crescent that curves towards the LEFT of the picture at the top. Keep the same colours, length and thickness.",
+   "done": true
+  },
+  "208,96": {
+   "op": "edit",
+   "from": "192,96",
+   "prompt": "This is a tapering tail with its point at the top and its thick flat end at the bottom. Move the point one step to the LEFT of the picture and let the tail bow very slightly to the right. Keep the same colours, length and scales.",
+   "done": true
+  }
+ }
+}

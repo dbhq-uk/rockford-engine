@@ -1,0 +1,139 @@
+@* The original's status row, as this port draws it.
+
+   Its own component for one reason: it is the only part of the page that is pure
+   markup over numbers, and inside Home it could not be tested without standing up a
+   JS module, four HTTP fetches and a game loop. Here bUnit renders it in a line.
+
+   That is issue #24's answer in miniature. Nothing here needs a browser, so nothing
+   here should need one to check.
+
+   The original draws four bare numbers on text row 1 with no labels at all - lives at
+   column 1, the quota at 15, the score at 24, the clock at 35. The labels and the
+   exit state are this port's, because a web page is read rather than memorised. The
+   NUMBERS are the original's, and HudFormat says why.
+
+   #35 gave it a HIERARCHY. Four fields at one weight means the eye has to read all
+   four to find the two that decide what to do next, and it has to do that while a
+   boulder is falling. So the quota and the clock are primary and large, the score
+   and the world are secondary, and the spare lives are a count of what is left
+   rather than a number that reads as a contradiction. *@
+
+<div class="hud">
+    @if (Row.Playing)
+    {
+        @* PRIMARY. The two numbers a player acts on: how many more to collect, and
+           how long there is. Everything else can be read between caves. *@
+        <div class="hud-primary">
+            <div class="field quota @(Row.Collected >= Row.Needed ? "met" : "")">
+                <span class="label">@Row.TreasureName</span>
+                <span class="value">
+                    <b>@Row.Collected</b><span class="of">/</span><span class="need">@Row.Needed</span>
+                </span>
+                @* A quota bar rather than a second number. It is a picture of the
+                   same two values, not a third value that could disagree with them. *@
+                <span class="bar" aria-hidden="true">
+                    <span class="fill" style="width: @(Percent)%"></span>
+                </span>
+            </div>
+
+            @* Under ten seconds the game itself starts warning, with a tone that
+               climbs as the time runs out. The HUD says the same thing. *@
+            <div class="field clock @(Row.Time < Simulation.WarningSeconds ? "low" : "")">
+                <span class="label">time</span>
+                <span class="value"><b>@Row.Time</b></span>
+            </div>
+        </div>
+
+        @* SECONDARY. True, needed, and not urgent. *@
+        <div class="hud-secondary">
+            <div class="field">
+                <span class="label">world</span>
+                <span class="value">@Row.Sheet <b>@(Row.Stage + 1)</b></span>
+            </div>
+
+            @* Six digits, zero padded, from 0x12267. The score is the one field on the
+               original's status row with no blanking - the other three put a space where
+               a leading zero would go and this one does not, so 450 points really does
+               read 000450. *@
+            <div class="field">
+                <span class="label">score</span>
+                <span class="value"><b>@Row.Score</b></span>
+            </div>
+
+            @* Spare lives, not lives. 0x13895 decrements before drawing, so a fresh
+               game shows four and the last life shows none - which is also why the
+               warning is at zero rather than one.
+
+               "lives 0" while the player is visibly alive was faithful arithmetic
+               behind a label that read as a contradiction. It says what the number
+               means now, and at zero it says the thing the player actually needs to
+               know. *@
+            <div class="field lives @(Row.SpareLives == 0 ? "low" : "")">
+                <span class="label">@(Row.SpareLives == 0 ? "last life" : "spare")</span>
+                <span class="value">
+                    @if (Row.SpareLives > 0)
+                    {
+                        <b>@Row.SpareLives</b>
+                        <span class="pips" aria-hidden="true">
+                            @for (var i = 0; i < Math.Min(Row.SpareLives, 5); i++)
+                            {
+                                <span class="pip"></span>
+                            }
+                        </span>
+                    }
+                </span>
+            </div>
+        </div>
+
+        @* The exit. Its own element because the change is the point - shut for most
+           of a cave and then, once, open. *@
+        <div class="hud-exit @(Row.ExitOpen ? "lit" : "")">
+            <span class="dot" aria-hidden="true"></span>
+            @(Row.ExitOpen ? "exit open" : "exit shut")
+        </div>
+
+        @* Anything the outcome overlay is NOT already saying. "caught", "out"
+           and "game over" moved to overlays in #35; showing them here as well
+           would say the same thing twice, in two weights, in the same moment. *@
+        @if (Row.Message is { } message && !Promoted.Contains(message))
+        {
+            <span class="msg">@message</span>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>
+    /// Everything the row shows, built by <see cref="GameHost.Status"/>.
+    ///
+    /// One parameter rather than eleven. Eleven bindings in the page meant eleven
+    /// lines that could name the wrong property with nothing to catch it, which is
+    /// how the lives field came to show the total rather than the spares. The choices
+    /// are the engine's now; this only draws them.
+    /// </summary>
+    [Parameter] public StatusRow Row { get; set; }
+
+    /// <summary>
+    /// The messages the page shows as an overlay instead of here.
+    /// </summary>
+    /// <remarks>
+    /// Named rather than inferred. A catch-all - "anything during a hold" -
+    /// would silently swallow a message added later, and a message nobody can
+    /// see is worse than one shown twice.
+    /// </remarks>
+    private static readonly string[] Promoted = ["caught", "out", "game over"];
+
+    /// <summary>
+    /// How full the quota bar is.
+    /// </summary>
+    /// <remarks>
+    /// Clamped at 100 because the original's quota can be OVERSHOT - a cave can be
+    /// left with more treasure collected than it asked for - and a bar wider than
+    /// its track would draw outside the HUD. It is a picture of the two numbers
+    /// beside it and must never disagree with them, so it is computed from them
+    /// rather than tracked separately.
+    /// </remarks>
+    private int Percent => Row.Needed <= 0
+        ? 100
+        : Math.Clamp(Row.Collected * 100 / Row.Needed, 0, 100);
+}

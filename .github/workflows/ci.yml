@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publiccheck:
+    name: nothing private
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # The game's files, art, audio and private paths must never land here.
+      - run: python tools/publiccheck.py .
+
+  dotnet:
+    name: build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore Rockford.slnx
+      - run: dotnet build Rockford.slnx --no-restore -c Release -warnaserror
+      # No game data here: every test that needs it must skip, not fail.
+      - run: dotnet test Rockford.slnx --no-build -c Release
+
+  javascript:
+    name: javascript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node tools/jslifecycle.mjs
+      - run: node tools/jscartoon.mjs
+
+  tools:
+    name: python tools
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet pillow numpy
+      - run: python -m compileall -q tools
+      - name: Every tool starts without throwing
+        run: |
+          set -euo pipefail
+          for t in tools/*.py; do
+            out=$(python "$t" --help 2>&1) || true
+            if printf '%s' "$out" | grep -q '^Traceback'; then
+              echo "::error file=$t::$t throws on --help"; printf '%s\n' "$out"; exit 1
+            fi
+          done
+      - run: python tools/scmformat.py --selftest
+      - run: python tools/cartoons.py --selftest
+      - run: python tools/cicodis-check.py --selftest

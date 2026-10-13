@@ -1,0 +1,15 @@
+bin/
+obj/
+*.user
+.vs/
+node_modules/
+__pycache__/
+*.pyc
+# The game, and anything made from it, never belongs here; tools/publiccheck.py
+# fails the build if any of it appears.
+original/
+extracted/
+unpacked/
+build/
+web/Rockford.Web/wwwroot/game/*
+!web/Rockford.Web/wwwroot/game/worlds.json

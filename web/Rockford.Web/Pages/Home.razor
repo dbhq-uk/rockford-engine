@@ -1,0 +1,2161 @@
+@page "/"
+@implements IAsyncDisposable
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<PageTitle>rockford</PageTitle>
+
+<div class="shell">
+    @* THE SECOND HALF OF THE LOADING SCREEN. index.html shows the same panel
+       while the runtime downloads, and Blazor removes it the moment this
+       component renders - which used to be before a single picture had been
+       asked for, so the player got a black canvas for as long as the atlas, the
+       title and the animation took to arrive. This panel takes over at the same
+       point on the same bar, and stays until every picture and track is in
+       memory and the title is painted underneath it. game.js drives the bar
+       and the number; nothing here re-renders during the load. *@
+    @if (_booting)
+    {
+        <div class="boot" @ref="_boot" aria-busy="true">
+            <div class="boot__art" aria-hidden="true"></div>
+            <div class="boot__panel">
+                <div class="boot__bar"><span></span></div>
+                <p class="boot__status" role="status">Loading the cave <span class="boot__percent" @ref="_bootPercent"></span></p>
+            </div>
+        </div>
+    }
+
+    <header class="bar">
+        <img class="mark" src="@Stamped("wordmark.png")" alt="Rockford" />
+        <StatusBar Row="_host?.Status() ?? default" />
+    </header>
+
+    @* What just happened, for anything that is not looking at the picture.
+       Polite rather than assertive: none of it is urgent enough to cut across
+       what a screen reader is already saying, and "exit open" arriving over the
+       top of a menu item being read is worse than arriving a moment later.
+
+       The CLOCK IS NOT IN HERE and must not be. It changes every second, and a
+       live region carrying it would talk over everything else in the game
+       permanently. What goes in is the handful of things that change the plan:
+       the exit opening, a life lost, the game ending. *@
+    <p class="visually-hidden" role="status" aria-live="polite">@_announcement</p>
+
+    <div class="screen">
+        <canvas @ref="_canvas" tabindex="0" aria-label="Rockford"></canvas>
+        @if (Screen == GameScreen.Interlude)
+        {
+            <div class="interlude" role="status">
+                <p class="interlude__kicker">World complete</p>
+                <h2 class="interlude__title">@_host!.CurrentWorld.Sheet</h2>
+                @* Score and lives carry over, which is the point worth making here -
+                   the original keeps both when a world is finished, and only running
+                   out of lives clears them.
+
+                   The same two numbers the HUD shows, so they cannot disagree, and
+                   lives is the spare count here too. The score is not padded: this
+                   is the port's own panel rather than the original's status row, and
+                   000450 under a heading reads as a fault. *@
+                <dl class="interlude__stats">
+                    <div><dt>Score</dt><dd>@Session.Score</dd></div>
+                    <div><dt>Lives</dt><dd>@Session.SpareLives</dd></div>
+                </dl>
+                <p class="interlude__prompt">Press anything to choose a world</p>
+            </div>
+        }
+
+        @* THE WORLD SELECTION, as real elements.
+           
+           It used to be a rectangle stroked onto the canvas. That cannot be
+           tabbed to, cannot be tapped without hit-testing coordinates by hand,
+           and cannot tell a screen reader which world it is on.
+           
+           The picture is still the canvas's - the portraits, the wordmark and
+           the instructions are all drawn into menu.png by tools/vipart.py. This
+           is a layer of buttons over the boxes those portraits were drawn into,
+           positioned from the SAME five fractions vipart.py used, read from the
+           file it writes beside the art.
+           
+           The canvas's on-screen size comes from fit(), which is the only thing
+           that knows it, published as two custom properties. Measuring it
+           anywhere else would be a second answer to a question with one. *@
+        @if (Screen == GameScreen.Menu && _menuBox is { } menu && _host is not null)
+        {
+            <div class="worlds" style="--menu-y: @F(menu.Y); --menu-w: @F(menu.W); --menu-h: @F(menu.H)">
+                @* One page of five, because the picture has five boxes. *@
+                @for (var box = 0; box < WorldList.PageSize; box++)
+                {
+                    var index = WorldList.PageOf(_host.Selected) * WorldList.PageSize + box;
+                    if (index >= _worlds.Length) break;
+                    var world = _worlds[index];
+                    <button class="world @(index == _host.Selected ? "on" : "")"
+                            style="--menu-x: @F(menu.X + menu.Step * box)"
+                            aria-pressed="@(index == _host.Selected)"
+                            @onclick="() => ChooseWorld(index)">
+                        <span class="world__name">@world.Sheet</span>
+                    </button>
+                }
+            </div>
+        }
+
+        @* THE OUTCOME OVERLAY, which is #35.
+           
+           "caught", "out" and "game over" used to appear as a small red word at
+           the end of the status row, in the same weight as the score, for
+           something that has just ended the cave. They are deliberate overlays
+           now, over the cave they happened in.
+
+           INSIDE THE HOST'S EXISTING HOLD, never adding to it. GameHost already
+           stops for CaveHold - 12 steps at 10 Hz, 1.2 seconds - or GameOverHold
+           at 3 seconds, and the animation is sized to fit inside whichever is
+           running. A transition that needed longer than the hold would be a new
+           pause, and the engine's pacing is not this layer's to change.
+
+           The engine is untouched: these are the strings it already sets and the
+           holds it already counts. *@
+        @if (Ended is { } ending && Screen == GameScreen.Playing)
+        {
+            <div class="outcome outcome--@ending.Kind" role="status">
+                <p class="outcome__word">@ending.Word</p>
+                @if (ending.Note is { } note)
+                {
+                    <p class="outcome__note">@note</p>
+                }
+            </div>
+        }
+
+        @* Paused because the page went away. A button rather than "press
+           anything", because the keys that would resume are the keys that
+           move: a player pressing left to carry on would resume and step into
+           whatever is beside them in the same moment.
+
+           role="alert" rather than "status" - this one IS worth cutting across
+           whatever is being read, because nothing is happening until it is
+           dealt with. *@
+        @if (_interrupted && Screen == GameScreen.Playing)
+        {
+            <div class="interlude interlude--paused" role="alert">
+                <p class="interlude__kicker">Paused</p>
+                <h2 class="interlude__title">You left the page</h2>
+                <p class="interlude__prompt">
+                    <button class="resume" @onclick="Resume" autofocus>Resume</button>
+                </p>
+            </div>
+        }
+    </div>
+
+    @* The on-screen controls. Present in the markup always and shown by CSS on a
+       coarse pointer only, rather than rendered conditionally: a tablet with a
+       keyboard is both, a desktop with a touchscreen is both, and deciding at
+       render time gets one of those wrong. CSS can answer per-device; C# cannot.
+
+       Hidden from assistive technology because it duplicates the keyboard, which
+       is already there and already announced. Two of the same control read as
+       two controls. *@
+    <div class="pad" aria-hidden="true">
+        <div class="pad__stick" @ref="_pad">
+            <span class="pad__arrow pad__arrow--up">&uarr;</span>
+            <span class="pad__arrow pad__arrow--down">&darr;</span>
+            <span class="pad__arrow pad__arrow--left">&larr;</span>
+            <span class="pad__arrow pad__arrow--right">&rarr;</span>
+        </div>
+        <div class="pad__fire" @ref="_fire">FIRE</div>
+    </div>
+
+    <footer class="bar">
+        <p class="hint">@((MarkupString)Hint)</p>
+        <p class="hint hint--touch">@TouchHint</p>
+        <div class="controls">
+            @* The cave stepper is a development affordance, not a feature. Being
+               able to step past a cave removes the only thing at stake - lives
+               and the time limit mean nothing if the cave you cannot solve is
+               one click away - so it is gated behind the same flag that hides
+               the presentation switch outside a debug build. *@
+            @if (CanSwitch && Screen == GameScreen.Playing)
+            {
+                <span class="stepper">
+                    <button @onclick="() => Go(-1)" aria-label="Previous cave"
+                            disabled="@(World == 0 && Stage == 0)">&lsaquo;</button>
+                    <span class="stepper__pos">Cave @(World * CavesPerWorld + Stage + 1) / @(CaveCount)</span>
+                    <button @onclick="() => Go(1)" aria-label="Next cave"
+                            disabled="@AtLastCave">&rsaquo;</button>
+                </span>
+            }
+
+            @if (Screen == GameScreen.Playing)
+            {
+                <span class="menu">
+                    <button @onclick="() => OpenMenu(Panel.Game)" aria-haspopup="menu"
+                            aria-expanded="@(_panel == Panel.Game ? "true" : "false")">Game</button>
+                    @if (_panel == Panel.Game)
+                    {
+                        <div class="panel" role="menu">
+                            @* Both of these cost something now, and a menu item that
+                               spends a life or ends a run without saying so is a trap.
+                               See GameHost.RestartCave and AbandonToChooser. *@
+                            <button role="menuitem" @onclick="RestartCave">Restart cave <span class="cost">costs a life</span></button>
+                            <button role="menuitem" @onclick="ChooseWorld">Choose world <span class="cost">ends this run</span></button>
+                            <hr />
+
+                            @* #70. A boulder has to read against the floor it
+                               is sitting on, and in a world where both are
+                               brown it does not.
+
+                               OFF by default and a choice rather than a
+                               correction: the picture without it is the
+                               picture the artwork intends. *@
+                            <label class="toggle">
+                                <input type="checkbox" checked="@_outlines"
+                                       @onchange="ToggleOutlines" />
+                                Outline moving objects
+                            </label>
+
+                            @* #37. Adds light and never removes it: a contact
+                               shadow under what can fall, and a glow on what
+                               genuinely emits. The cave is exactly as readable
+                               with it off, which is the rule the whole thing
+                               is built around. *@
+                            @* VIP only (#37 is "VIP: lighting"). It had no guard, so
+                               the faithful build drew shadows and glows by default,
+                               which the 1988 game never did (found 13 October 2026). *@
+                            @if (IsVip)
+                            {
+                                <label class="toggle">
+                                    <input type="checkbox" checked="@_lighting"
+                                           @onchange="ToggleLighting" />
+                                    Lighting
+                                </label>
+                            }
+                            @* Levels, not toggles. The glyphs in the footer stay
+                               as a quick mute, which is a different question from
+                               how loud - "not now" against "this loud when it is
+                               on". A player who turns the music to 20 and then
+                               mutes gets 20 back when they unmute. *@
+                            <label class="level">
+                                Music
+                                <input type="range" min="0" max="100" step="5"
+                                       value="@_musicLevel"
+                                       aria-label="Music volume"
+                                       @oninput="SetMusicLevel" />
+                                <output>@_musicLevel</output>
+                            </label>
+                            <label class="level">
+                                Effects
+                                <input type="range" min="0" max="100" step="5"
+                                       value="@_effectsLevel"
+                                       aria-label="Sound effects volume"
+                                       @oninput="SetEffectsLevel" />
+                                <output>@_effectsLevel</output>
+                            </label>
+
+                            <hr />
+                            @* Three answers rather than two. "System" defers to
+                               prefers-reduced-motion, because a player who has
+                               already told their machine should not have to say
+                               it again - and the CSS rules for that cannot reach
+                               a blend computed in game.js. *@
+                            <button role="menuitemradio" aria-checked="@((_reducedMotion is null).ToString().ToLowerInvariant())"
+                                    @onclick="() => SetMotion(null)">
+                                Motion: system <span class="tick">@(_reducedMotion is null ? "✓" : "")</span>
+                            </button>
+                            <button role="menuitemradio" aria-checked="@((_reducedMotion == false).ToString().ToLowerInvariant())"
+                                    @onclick="() => SetMotion(false)">
+                                Motion: full <span class="tick">@(_reducedMotion == false ? "✓" : "")</span>
+                            </button>
+                            <button role="menuitemradio" aria-checked="@((_reducedMotion == true).ToString().ToLowerInvariant())"
+                                    @onclick="() => SetMotion(true)">
+                                Motion: reduced <span class="tick">@(_reducedMotion == true ? "✓" : "")</span>
+                            </button>
+
+                            @* Moved here when the audio menu became two toggles.
+                               These are choices between options rather than on/off
+                               states, so they cannot be carried by a glyph. *@
+                            @if (_enhanced)
+                            {
+                                <hr />
+                                <button role="menuitemradio" aria-checked="@(_vocal.ToString().ToLowerInvariant())"
+                                        @onclick="() => SetCut(true)">
+                                    Vocal <span class="tick">@(_vocal ? "✓" : "")</span>
+                                </button>
+                                <button role="menuitemradio" aria-checked="@((!_vocal).ToString().ToLowerInvariant())"
+                                        @onclick="() => SetCut(false)">
+                                    Instrumental <span class="tick">@(_vocal ? "" : "✓")</span>
+                                </button>
+                            }
+                            @if (CanSwitch)
+                            {
+                                <hr />
+                                <button role="menuitemradio" aria-checked="@((!_enhanced).ToString().ToLowerInvariant())"
+                                        @onclick="() => SetPresentation(false)">
+                                    1988 sound <span class="tick">@(_enhanced ? "" : "✓")</span>
+                                </button>
+                                <button role="menuitemradio" aria-checked="@(_enhanced.ToString().ToLowerInvariant())"
+                                        @onclick="() => SetPresentation(true)">
+                                    VIP sound <span class="tick">@(_enhanced ? "✓" : "")</span>
+                                </button>
+                            }
+                        </div>
+                    }
+                </span>
+            }
+
+            @* Two toggles rather than a menu. Dan, 16 September 2026: one glyph for
+               the theme and one for the sound effects, each muting its own channel
+               on a click. A menu makes you open something to find out whether sound
+               is on; a glyph that carries its own state answers that from across
+               the room. Struck through and dimmed is off, plain is on.
+
+               They are buttons, not a menu, so no .menu wrapper and no caret. *@
+            @* Drawn from what the player WANTS, not from what is sounding.
+               Browsers refuse audio until the page has been interacted with, so
+               _music is false on the title screen for everyone - and a glyph
+               reading from it told every first-time visitor their music was
+               muted when they had muted nothing.
+
+               Disabled until the stored choices have been applied. These are in
+               the markup from the first render, and a press during loading acted
+               on a default the player had already overridden. *@
+            <button class="iconbtn @(_musicWanted ? "" : "iconbtn--off")"
+                    @onclick="ToggleMusic"
+                    disabled="@(!_settingsReady)"
+                    aria-pressed="@((!_musicWanted).ToString().ToLowerInvariant())"
+                    aria-label="@(_musicWanted ? "Music on. Click to mute" : "Music muted. Click to unmute")"
+                    title="@(_musicWanted ? "Music on" : "Music muted")">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"
+                     fill="none" stroke="currentColor" stroke-width="1.8"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    @* A beamed pair of quavers: two heads, two stems, one beam.
+                       Reads as "music" at 18 pixels where a single note reads as
+                       a stray mark.
+
+                       Nudged down one unit because the note is not symmetrical in
+                       its own box. With the 1.8 stroke counted the artwork spans
+                       y 2.1 to 19.9, whose centre is 11 rather than the box's 12,
+                       so it rendered a whisker high inside a button that was
+                       itself centred correctly. Horizontally it already spans
+                       3.1 to 20.9, centre 12, so only y moves. *@
+                    <g transform="translate(0 1)">
+                        <path d="M9 17V5l11-2v12" />
+                        <path d="M9 9l11-2" />
+                        <ellipse cx="6.5" cy="17" rx="2.5" ry="2" />
+                        <ellipse cx="17.5" cy="15" rx="2.5" ry="2" />
+                    </g>
+                    @if (!_music)
+                    {
+                        <line x1="3" y1="21" x2="21" y2="3" class="iconbtn__slash" />
+                    }
+                </svg>
+            </button>
+
+            <button class="iconbtn @(_muted ? "iconbtn--off" : "")"
+                    @onclick="ToggleSound"
+                    disabled="@(!_settingsReady)"
+                    aria-pressed="@(_muted.ToString().ToLowerInvariant())"
+                    aria-label="@(_muted ? "Sound effects muted. Click to unmute" : "Sound effects on. Click to mute")"
+                    title="@(_muted ? "Sound effects muted" : "Sound effects on")">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"
+                     fill="none" stroke="currentColor" stroke-width="1.8"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    @* A speaker with two waves. The cone spans x 3 to 13 and the
+                       waves 16 to 19.5, so the ink runs x 2.1 to 20.4 against the
+                       slash's own 3 to 21 - close enough that the slash reads as
+                       crossing the whole glyph rather than clipping it. *@
+                    <path d="M4 9.5h3L12 6v12L7 14.5H4z" />
+                    <path d="M16 9.5a4 4 0 0 1 0 5" />
+                    <path d="M18.5 7a7.5 7.5 0 0 1 0 10" />
+                    @if (_muted)
+                    {
+                        <line x1="3" y1="21" x2="21" y2="3" class="iconbtn__slash" />
+                    }
+                </svg>
+            </button>
+        </div>
+    </footer>
+</div>
+
+@code {
+    @* GameScreen lives in the engine now, beside the host that owns it. Interlude
+       is the world-complete screen: the finished cave dimmed behind a heading, the
+       score, and a prompt, held until the player presses something while the reward
+       track plays. *@
+
+    private ElementReference _canvas;
+
+    /// <summary>True until every picture and track is in memory and the title
+    /// is up. The load phase panel shows while it is.</summary>
+    private bool _booting = true;
+    private ElementReference _boot;
+    private ElementReference _bootPercent;
+    private IJSObjectReference? _js;
+    private CancellationTokenSource? _loop;
+
+    /// <summary>
+    /// The running game loop, so disposal can wait for the step in flight rather
+    /// than pulling the interop reference out from under it.
+    /// </summary>
+    private Task? _loopTask;
+
+    /// <summary>
+    /// Set by DisposeAsync, and checked after every await in the setup path.
+    ///
+    /// Setting this component up is half a dozen awaits long - a module import,
+    /// four HTTP fetches and a stream - and a player can navigate away in the
+    /// middle of it. Disposal then finds nothing to release, and the setup
+    /// carries on afterwards building the very things it was meant to tear down.
+    /// </summary>
+    private bool _disposed;
+
+    private WorldEntry[] _worlds = [];
+    private TileSet? _tiles;
+
+    /// <summary>
+    /// Everything about the game that is not presentation: which cave, which
+    /// screen, the lives, the score, the status row and what a finished cave leads
+    /// to. It lives in the engine, where it can be tested without a browser.
+    ///
+    /// Null until the four asset fetches have finished. Nothing can observe that:
+    /// the loop is started on the line after them, and the screens that render
+    /// before it exists are the title picture and its own null-safe properties.
+    /// </summary>
+    private GameHost? _host;
+
+    // Thin readers so the markup does not have to say _host! on every line. Each
+    // one answers for the pre-asset state, which is the title screen.
+    private GameScreen Screen =>
+        _host is null ? GameScreen.Title
+        // The last cave of a world ends with the interlude, which the host raises on
+        // the same tick as the end itself. The cartoon plays over the cave first, so
+        // until it is done the page still shows the cave.
+        : _cartoonRunning && _host.Screen == GameScreen.Interlude ? GameScreen.Playing
+        : _host.Screen;
+    private GameSession Session => _host?.Session ?? EmptySession;
+    private int World => _host?.World ?? 0;
+    private int Stage => _host?.Stage ?? 0;
+    private int Needed => _host?.Needed ?? 0;
+    private int Collected => _host?.Collected ?? 0;
+    private int Time => _host?.Time ?? 0;
+    private bool ExitOpen => _host?.ExitOpen ?? false;
+    private string? Message => _host?.Message;
+
+    /// <summary>
+    /// Where the five world portraits sit, as fractions of the picture.
+    /// </summary>
+    /// <remarks>
+    /// Written by <c>tools/vipart.py</c> alongside the menu art it drew with
+    /// them, so the page cannot frame a selection somewhere the portrait is not.
+    /// </remarks>
+    private sealed record MenuBox(double X, double Y, double W, double H, double Step);
+
+    private MenuBox? _menuBox;
+
+    /// <summary>A fraction as a CSS percentage, invariantly.</summary>
+    /// <remarks>
+    /// Invariant, because a build on a machine with a comma decimal separator
+    /// would emit "27,5%" and every button would land at the left edge.
+    /// </remarks>
+    private static string F(double fraction) =>
+        (fraction * 100).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    /// <summary>
+    /// Pick a world by pointer, which the keyboard path already does by moving
+    /// the selection and pressing fire.
+    /// </summary>
+    /// <remarks>
+    /// Two steps, not one: select, then start. A single tap that both moved the
+    /// selection and started the world would make a mis-tap unrecoverable on
+    /// the one input that has no way to look before it commits.
+    /// </remarks>
+    private async Task ChooseWorld(int index)
+    {
+        if (_host is null) return;
+
+        if (_host.Selected != index)
+        {
+            _host.Selected = index;
+            if (_js is not null)
+            {
+                await ShowMenu();
+            }
+
+            return;
+        }
+
+        // The same route the keyboard takes, so there is one way in.
+        _host.StartSelectedWorld();
+        await SetWorldSheet();
+        await Paint();
+    }
+
+    /// <summary>What an outcome overlay says, or null when nothing has ended.</summary>
+    /// <remarks>
+    /// Derived from the message the engine already sets, so there is no second
+    /// source of truth to go out of step with the HUD - and deliberately NOT a
+    /// catch-all: an unrecognised message stays in the status row rather than
+    /// being promoted to a full-screen event because it happened to be set.
+    /// </remarks>
+    private Outcome? Ended => _cartoonRunning || _host is null ? null
+        : Outcomes.For(_host.Message, _host.Sim?.TimeRemaining ?? 0, _host.Session.Score);
+    private bool AtLastCave => _host?.AtLastCave ?? false;
+    private int CaveCount => _worlds.Length * CavesPerWorld;
+
+    /// <summary>Stands in for the session before the host exists, so the markup can
+    /// read lives and score on a screen that has neither.</summary>
+    private static readonly GameSession EmptySession = new();
+
+    private IJSObjectReference? _settings;
+
+    private bool _muted;
+
+    /// <summary>Whether the theme is actually sounding right now.</summary>
+    private bool _music;
+
+    /// <summary>
+    /// Whether the player WANTS music, which is not the same thing.
+    ///
+    /// <c>_music</c> is false before the first gesture - browsers will not start
+    /// audio until the page has been interacted with - and false again if a play
+    /// fails. Deriving the next request from it made an enabled channel whose
+    /// playback had not happened indistinguishable from a disabled one, and it is
+    /// what the store has to record: "I want music" must not become "music is
+    /// off" on the next visit. Astra, 19 September 2026.
+    /// </summary>
+    private bool _musicWanted = true;
+
+    /// <summary>
+    /// Set once the stored choices have been applied. The sound controls are
+    /// disabled until then: they are in the markup from the first render, and
+    /// pressing one during loading acted on a default the player had already
+    /// overridden - a stored mute could be undone before it was ever applied.
+    /// </summary>
+    private bool _settingsReady;
+
+    /// <summary>
+    /// Whether the VIP theme plays the vocal cut rather than the instrumental.
+    /// Vocal by default (Dan, 16 Sep 2026). This must agree with DEFAULT_CUT in
+    /// music-vip.js, or the control and the audio disagree on the first play.
+    /// </summary>
+    private bool _vocal = true;
+
+    /// <summary>
+    /// Set when the world just finished was the last one, so the interlude knows
+    /// whether it is advancing to the next world or starting the game over.
+    /// </summary>
+
+    private enum Panel { None, Game }
+
+    /// <summary>
+    /// Which footer menu is open. One field rather than a flag each, because two
+    /// open panels overlapping is never wanted and this makes it unrepresentable.
+    /// </summary>
+    private Panel _panel = Panel.None;
+
+    /// <summary>Opens a panel, or closes it if it was already the open one.</summary>
+    private void OpenMenu(Panel which) =>
+        _panel = _panel == which ? Panel.None : which;
+
+    /// <summary>
+    /// Whether the host should be advancing the cave right now.
+    /// </summary>
+    /// <remarks>
+    /// There was no interruption policy at all. `game.js` dropped the held keys
+    /// on blur and that was the whole of it: a hidden tab still gets timers,
+    /// throttled to whatever the browser allows, so the cave went on advancing
+    /// in the background and the ordinary result was coming back to a dead
+    /// player. <see cref="StepPacer"/> stops a catch-up burst AFTER a stall,
+    /// which is a different problem - it does not stop the steps happening.
+    ///
+    /// Three things stop it, and all three are outside <c>Simulation</c>:
+    /// the page being hidden, the Game menu being open, and the player not yet
+    /// having said they are ready. The third is why the page being visible
+    /// again is not enough on its own - see the latch in game.js.
+    ///
+    /// Only in play. The title and the chooser have nothing at stake and
+    /// pausing them would mean a paused overlay over a menu.
+    /// </remarks>
+    private async Task<bool> Interrupted()
+    {
+        var menuOpen = _panel != Panel.None;
+        if (_js is null) return ShouldHold(Screen, menuOpen, false);
+
+        var pageLeft = await _js.InvokeAsync<bool>("wasInterrupted");
+        var hold = ShouldHold(Screen, menuOpen, pageLeft);
+
+        // LATCHED BUT NOT HELD, so release it here rather than leaving it for a
+        // button that is not on this screen.
+        //
+        // The latch is set wherever the page goes away, including the title and
+        // the chooser - and those screens deliberately do not pause, so they
+        // show no Resume. Left alone, the audio stayed suspended with nothing
+        // able to wake it: `_audioOpen` refuses a second unlock and the theme's
+        // arming is already spent, so the sound did not come back until the
+        // player reached a cave and pressed a button they had no reason to
+        // press. It also meant choosing a world after a hide opened the next
+        // cave already paused, for an interruption that happened on a menu.
+        // Astra, 19 September 2026.
+        if (pageLeft && !hold)
+        {
+            await _js.InvokeVoidAsync("resume");
+            pageLeft = false;
+        }
+
+        if (pageLeft != _interrupted)
+        {
+            _interrupted = pageLeft;
+            await InvokeAsync(StateHasChanged);
+        }
+        return hold;
+    }
+
+    /// <summary>
+    /// The pause decision itself, with no interop in it so it can be tested.
+    /// </summary>
+    /// <param name="screen">Which screen is showing.</param>
+    /// <param name="menuOpen">Whether the Game menu is open.</param>
+    /// <param name="pageLeft">Whether the page has been away and not resumed.</param>
+    /// <remarks>
+    /// **Both builds, and that is a decision rather than an inheritance.** The
+    /// obvious objection is that the faithful build should not gain a pause the
+    /// original never had. It does not: the original ran under DOS with nothing
+    /// to switch to, so there is no 1988 behaviour for "the tab was hidden" to
+    /// be faithful to. The choice is between two host behaviours, neither of
+    /// them the original's, and killing the player while they are not looking is
+    /// not the more faithful of the two - it reproduces a browser artefact, not
+    /// a game. Nothing here touches <c>Simulation</c>.
+    /// </remarks>
+    public static bool ShouldHold(GameScreen screen, bool menuOpen, bool pageLeft)
+    {
+        // Only in play. The title and the chooser have nothing at stake, and
+        // pausing them would put a Resume button over a menu.
+        if (screen != GameScreen.Playing) return false;
+        return menuOpen || pageLeft;
+    }
+
+    /// <summary>Whether the page has been away and not yet resumed.</summary>
+    private bool _interrupted;
+
+    /// <summary>
+    /// The player said they are ready. Deliberately its own action rather than
+    /// "any key", because the keys that resume are the keys that move: a player
+    /// pressing left to carry on would resume and step into whatever is beside
+    /// them in the same moment.
+    /// </summary>
+    private async Task Resume()
+    {
+        if (_js is not null) await _js.InvokeVoidAsync("resume");
+        _interrupted = false;
+    }
+
+    /// <summary>
+    /// Closes any open footer menu. Called from JavaScript on a press outside the
+    /// menu or on Escape, which is how every other menu anyone has used behaves.
+    /// </summary>
+    /// <remarks>
+    /// Returns without re-rendering when nothing is open. The listener fires on
+    /// every pointerdown anywhere in the document, so the common case is that
+    /// there is nothing to do, and a StateHasChanged per click would repaint the
+    /// component on every step the player takes.
+    /// </remarks>
+    [JSInvokable]
+    public void CloseMenus()
+    {
+        if (_panel == Panel.None) return;
+        _panel = Panel.None;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private DotNetObjectReference<Home>? _self;
+
+    /// <summary>
+    /// Every menu row closes the panel after acting. A menu that stays open after
+    /// a choice leaves the player wondering whether the choice took.
+    /// </summary>
+    /// <summary>
+    /// The host decides what a restart costs and whether it is allowed at all.
+    /// This carries out the result.
+    ///
+    /// The menu stays open when the host refuses - mid-hold - rather than closing
+    /// on a press that did nothing.
+    /// </summary>
+    private async Task RestartCave()
+    {
+        if (_host?.RestartCave() != true) return;
+
+        _panel = Panel.None;
+        await SetWorldSheet();
+        await Paint();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ChooseWorld()
+    {
+        if (_host?.AbandonToChooser() != true) return;
+
+        _panel = Panel.None;
+        if (_js is not null)
+            await ShowMenu();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SetCut(bool vocal)
+    {
+        _panel = Panel.None;
+        if (vocal == _vocal) return;
+        await ToggleCut();
+    }
+
+    private async Task SetPresentation(bool vip)
+    {
+        _panel = Panel.None;
+        if (vip == _enhanced) return;
+        await ToggleEnhanced();
+    }
+
+    /// <summary>
+    /// Which release this build is. Set by <c>-p:Presentation=Vip</c>, not by
+    /// anything the player can reach, because these are two releases rather than
+    /// two settings. The simulation is identical in both.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately <c>static readonly</c> and not <c>const</c>. A const bool makes
+    /// the compiler fold every test on it and then warn that the other branch is
+    /// unreachable, which it is - but the branch is the whole point, and a build
+    /// full of warnings is a build nobody reads the warnings of.
+    /// </remarks>
+    private static readonly bool IsVip =
+#if VIP
+        true;
+#else
+        false;
+#endif
+
+    /// <summary>
+    /// Which sound presentation is playing. Follows the build, and only moves away
+    /// from it in a development build, where comparing the two side by side is the
+    /// whole point.
+    /// </summary>
+    private bool _enhanced = IsVip;
+
+    /// <summary>
+    /// Whether the player is offered the switch. Development only: a released
+    /// build that could turn the enhanced assets on would have to ship them, and
+    /// the VIP sprite atlas is megabytes against the original's two hundred
+    /// kilobytes.
+    /// </summary>
+    private static readonly bool CanSwitch =
+#if DEBUG
+        true;
+#else
+        false;
+#endif
+
+    /// <summary>
+    /// How many sheet pixels there are per original pixel. The sprite coordinate
+    /// tables are in original-pixel space in both builds; only the sheet changes.
+    /// </summary>
+    private static int AtlasScale => IsVip ? 8 : 1;
+
+    /// <summary>The sprite sheet for a world, for whichever build this is.</summary>
+    private static string SheetFor(string sheet) =>
+        Stamped(IsVip ? $"game/{sheet}-x8.png" : $"game/{sheet}.png");
+
+    /// <summary>The title and select screens, which are whole pictures either way.</summary>
+    private static string TitlePicture => Stamped(IsVip ? "vip/title.png" : "game/title.png");
+
+    /// <summary>
+    /// The title animation's frames, or null for a build that has none.
+    ///
+    /// The faithful build has the original's own - TITLEANI.SCM, which the loader
+    /// at 0x12922 puts on the page after the title picture. VIP's title is a single
+    /// render with no frames cut from it, so it shows a still until it has its own.
+    /// </summary>
+    private static string? TitleSheet => Stamped(IsVip ? "vip/titleani.png" : "game/titleani.png");
+
+    /// <summary>
+    /// Where the frame rectangles are, in the coordinates of that build's own title
+    /// picture. The faithful build's are read out of the executable; VIP's are built
+    /// by <c>tools/vipart.py titleani</c>.
+    /// </summary>
+    private static string TitleLayout => IsVip ? "vip/titleani.json" : "game/titleani.json";
+    private static string MenuPicture => MenuPictureOn(0);
+
+    /// <summary>The select picture for a page: the one picture in the faithful
+    /// build, a baked picture per page in VIP.</summary>
+    private static string MenuPictureOn(int page) => Stamped(WorldList.MenuPicture(IsVip, page));
+
+    /// <summary>
+    /// The select screen, on whichever page the highlight is.
+    /// </summary>
+    /// <remarks>
+    /// The faithful build's first page is the picture as it shipped, portraits and
+    /// all. Its later pages reuse the same five boxes, so each one has its portrait
+    /// drawn over the 1988 face that was baked into the picture - and a box with no
+    /// world behind it gets blanked rather than left showing somebody else.
+    /// VIP bakes every page, portraits included, so it paints nothing over any of
+    /// them (#111).
+    /// </remarks>
+    private async Task ShowMenu()
+    {
+        if (_js is null || _host is null) return;
+
+        var page = WorldList.PageOf(_host.Selected);
+        string?[]? portraits = null;
+
+        if (!WorldList.PortraitsAreBaked(IsVip, page))
+        {
+            portraits = new string?[WorldList.PageSize];
+            for (var box = 0; box < WorldList.PageSize; box++)
+            {
+                var index = page * WorldList.PageSize + box;
+                if (index < _worlds.Length && _worlds[index].Portrait is { } face)
+                    portraits[box] = Stamped($"game/{face}");
+            }
+        }
+
+        await _js.InvokeAsync<bool>("showMenu", MenuPictureOn(page), WorldList.BoxOf(_host.Selected), portraits);
+    }
+
+    /// <summary>
+    /// Fetches sheets in the background, after the boot bar has gone. Nothing waits
+    /// for it, and a failure costs nothing: a sheet that is not there is fetched the
+    /// old way when a world needs it.
+    /// </summary>
+    private async Task PreloadLater(string[] urls)
+    {
+        try
+        {
+            if (_js is not null && !_disposed)
+                await _js.InvokeAsync<bool>("preloadAll", urls, false, Array.Empty<string>(), null, null);
+        }
+        catch (Exception)
+        {
+            // Background work: nothing to report, nothing depends on it.
+        }
+    }
+
+    private bool _audioOpen;
+
+    /// <summary>The title screen's animation, or null once it has been left.</summary>
+    private TitleAnimation? _title;
+
+    /// <summary>
+    /// The generator the title animation draws from, once per toss at 0xF2FF.
+    ///
+    /// Its own instance rather than a cave's, because there is no cave on the title
+    /// screen. In the original this is the same global the caves use, so a player
+    /// who sits and watches leaves the stream somewhere else - a difference the
+    /// port keeps only in spirit, since each cave here is seeded outright.
+    /// </summary>
+    private readonly GameRandom _titleRandom = new();
+
+    private System.Text.Json.JsonDocument? _titleLayout;
+
+    /// <summary>Four caves to a world, from the record index at <c>0xFE9D</c>.</summary>
+    private const int CavesPerWorld = GameHost.CavesPerWorld;
+
+    /// <summary>
+    /// The length of a step, for spreading a step's sound frames across it. The
+    /// pacing itself is <see cref="StepPacer"/>, which owns the number.
+    /// </summary>
+    private const double StepMilliseconds = StepPacer.StepMilliseconds;
+
+    /// <summary>
+    /// A cache key for game.js, which Blazor does not fingerprint because the import
+    /// comes from here rather than from index.html. Without it a deploy landed and
+    /// the browser kept running the previous copy for four hours. The version is
+    /// stamped with the build time by the project file.
+    /// </summary>
+    private static readonly string Build =
+        typeof(Home).Assembly.GetName().Version?.ToString() ?? "dev";
+
+    /// <summary>
+    /// An asset URL carrying this release's content identity.
+    /// </summary>
+    /// <remarks>
+    /// Blazor fingerprints <c>_framework</c> and nothing else, so everything
+    /// under wwwroot had a stable URL and a four-hour Pages cache: a new
+    /// application could run against the previous release's atlases, game data
+    /// and audio. Nothing was seen doing it; the repository permitted it.
+    ///
+    /// The identity is a hash of every file in wwwroot, computed by
+    /// tools/contentid.py and passed to the publish as the assembly version -
+    /// so a changed asset is a changed URL, and an unchanged release does not
+    /// needlessly discard a warm cache the way the old build-time stamp did.
+    ///
+    /// Every asset the application asks for by hand goes through here. The ones
+    /// it does not - the stylesheet, which index.html references - are stamped
+    /// after publish by tools/cachebust.py.
+    /// </remarks>
+    private static string Stamped(string url) =>
+        url.Contains('?') ? $"{url}&v={Build}" : $"{url}?v={Build}";
+
+    private string Hint => Screen switch
+    {
+        GameScreen.Title => "Press <kbd>Enter</kbd> to begin",
+        GameScreen.Menu => "<kbd>&larr;</kbd> <kbd>&rarr;</kbd> to choose a world, <kbd>Enter</kbd> to play",
+        _ => "<kbd>&larr;</kbd> <kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>&rarr;</kbd> to move, "
+             + "<kbd>Shift</kbd> with a direction to fire",
+    };
+
+    /// <summary>
+    /// The same instructions for a device with no keyboard. Shown by CSS beside
+    /// the ones above, each hidden for the pointer it does not describe.
+    ///
+    /// Telling a phone to press Enter is how this looked until today, and it was
+    /// not a small gap: the title screen was the end of the road.
+    /// </summary>
+    private string TouchHint => Screen switch
+    {
+        GameScreen.Title => "Tap the picture to begin",
+        GameScreen.Menu => "Slide the pad to choose a world, tap the picture to play",
+        _ => "Slide the pad to move, hold FIRE with a direction",
+    };
+
+    private ElementReference _pad;
+    private ElementReference _fire;
+
+    private int _musicLevel = 70;
+    private int _effectsLevel = 80;
+
+    /// <summary>
+    /// Null is "whatever the system asks for", which is a third answer rather
+    /// than a missing one - see settings.js.
+    /// </summary>
+    private bool? _reducedMotion;
+
+    private Task SetMusicLevel(ChangeEventArgs e) => SetLevel("music", e.Value);
+    private Task SetEffectsLevel(ChangeEventArgs e) => SetLevel("effects", e.Value);
+
+    private async Task SetLevel(string channel, object? raw)
+    {
+        if (_js is null || !int.TryParse(raw?.ToString(), out var percent)) return;
+
+        percent = Math.Clamp(percent, 0, 100);
+
+        if (channel == "music") _musicLevel = percent;
+        else _effectsLevel = percent;
+
+        await _js.InvokeVoidAsync("setLevel", channel, percent);
+        await Remember(channel == "music" ? "musicLevel" : "effectsLevel", percent);
+    }
+
+    private async Task SetMotion(bool? reduced)
+    {
+        _panel = Panel.None;
+        if (_js is null) return;
+
+        _reducedMotion = reduced;
+        await _js.InvokeVoidAsync("setReducedMotion", reduced);
+        await Remember("reducedMotion", reduced);
+    }
+
+    /// <summary>
+    /// The last thing worth saying out loud, or empty.
+    ///
+    /// Written only when it CHANGES. A live region re-announces whatever it
+    /// holds when the text is rewritten, even to the same value, so assigning
+    /// this every step would repeat "exit open" ten times a second.
+    /// </summary>
+    private string _announcement = "";
+
+    /// <summary>What the last announcement was made from, so repeats are silent.</summary>
+    private (bool ExitOpen, string? Message, int SpareLives) _announced = (false, null, -1);
+
+    /// <summary>
+    /// Says the things that change what a player should do next, and nothing
+    /// else.
+    /// </summary>
+    private async Task Announce()
+    {
+        if (_host is null) return;
+
+        var now = (_host.ExitOpen, _host.Message, _host.Session.SpareLives);
+        if (now == _announced) return;
+
+        var said = "";
+
+        // Most specific first: a message is a moment - "caught", "out", "game
+        // over" - and it matters more than a standing state.
+        //
+        // In the overlay's words, so a screen reader hears what a sighted player
+        // reads: the host's "out" is a cave COMPLETED, and said as it stands it was
+        // a bare "out" (#144).
+        if (now.Message is { Length: > 0 } message)
+            said = Outcomes.For(message, _host.Sim?.TimeRemaining ?? 0, _host.Session.Score)?.Word ?? message;
+        else if (now.ExitOpen && !_announced.ExitOpen) said = "exit open";
+        else if (now.SpareLives < _announced.SpareLives && _announced.SpareLives >= 0)
+            said = Lives(now.SpareLives);
+
+        var was = _announced;
+        _announced = now;
+
+        // Cleared when the moment passes, and that is not tidiness.
+        //
+        // A live region announces its text when the text CHANGES. Leaving
+        // "caught" in place after the cave reloads means the next death writes
+        // "caught" again, Blazor sees no change, and the player is told nothing
+        // about a life they just lost. Astra, 19 September 2026.
+        if (said.Length == 0)
+        {
+            if (was.Message is { Length: > 0 } && now.Message is null && _announcement.Length > 0)
+            {
+                _announcement = "";
+                await InvokeAsync(StateHasChanged);
+            }
+
+            return;
+        }
+
+        _announcement = said;
+
+        // And rendered. This runs at the end of a tick, after PlayTick has asked
+        // for its render, and a hold tick does not render at all - so without
+        // this an announcement could wait out the whole death hold before
+        // reaching anybody.
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// How many lives are left, said the way a person counts them.
+    ///
+    /// SpareLives excludes the one being played, so four actual lives is a spare
+    /// count of three - and announcing the spare count told the player they had
+    /// one fewer than they did. The HUD can show spares because it is labelled;
+    /// a sentence read aloud cannot.
+    /// </summary>
+    private static string Lives(int spare) => spare switch
+    {
+        0 => "last life",
+        1 => "2 lives left",
+        _ => $"{spare + 1} lives left",
+    };
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (!first) return;
+
+        var js = await JS.InvokeAsync<IJSObjectReference>("import", $"./game.js?v={Build}");
+
+        // Its own module rather than a corner of game.js: what the player chose
+        // is not canvas plumbing, and the two have nothing to say to each other.
+        // Same cache key, because a stale settings.js against a fresh game.js is
+        // the kind of mismatch that only shows up as a setting quietly not
+        // applying.
+        //
+        // Not fatal if it fails. Losing the preferences is annoying; refusing to
+        // start the game over them is not a trade anybody would choose, and the
+        // game ran without any of this yesterday. Remember and
+        // ApplyStoredSettings both no-op on a null reference.
+        IJSObjectReference? settings = null;
+        try
+        {
+            settings = await JS.InvokeAsync<IJSObjectReference>("import", $"./settings.js?v={Build}");
+        }
+        catch (JSException)
+        {
+            // Blocked, missing or corrupt. Defaults, and carry on.
+        }
+
+        // The imports can outlive the component. Navigating away while one is in
+        // flight means DisposeAsync has already run and found nothing to release,
+        // and without this the module would then be set up, given listeners and
+        // handed a loop, after its only chance to be cleaned up had passed.
+        //
+        // BOTH of them. Releasing only the first leaked the second, which is the
+        // sort of thing that shows up as a module quietly surviving a navigation.
+        if (_disposed)
+        {
+            await js.DisposeAsync();
+            if (settings is not null) await settings.DisposeAsync();
+            return;
+        }
+
+        _settings = settings;
+        _js = js;
+
+        // init BEFORE watchOutside, and the order is load-bearing. init tears the
+        // module down on the way in so a remount cannot stack a second set of
+        // listeners, and that teardown includes unwatchOutside - so watching
+        // first meant the outside-click and Escape handling was switched off
+        // again a line later, on every single mount.
+        // IsVip decides whether the renderer slides anything. The faithful build is
+        // the reference VIP gets judged against, so its picture stays on the
+        // simulation's own grid and its own clock.
+        // THE LOAD PHASE. Every world's atlas, the title, its animation, the
+        // select screen and - in VIP - every track, fetched once behind the bar
+        // and held in memory, so nothing after this line waits on the network.
+        // The worlds come first because they name the atlases - and only the
+        // worlds this build can draw. The manifest lists all ten, and preloading
+        // an atlas for each would ask for sheets that do not exist: music, luck
+        // and miner in both builds, and scuba's and player's 8x atlases in VIP.
+        // See WorldList.
+        _worlds = WorldList.Offered(
+            await Http.GetFromJsonAsync<WorldEntry[]>(Stamped("game/worlds.json")) ?? [], IsVip);
+        if (_disposed) return;
+
+        // The second page's portraits too, at the same stamped URLs ShowMenu asks
+        // for, so paging onto it is drawn from memory like everything else.
+        // VIP has no portrait files to fetch - they are baked into its pictures, and
+        // game/portraits is stripped from its build - so it asks for each page's
+        // picture instead.
+        var portraitFiles = IsVip
+            ? []
+            : _worlds.Where(w => w.Portrait is not null).Select(w => Stamped($"game/{w.Portrait}"));
+        var menuPages = Enumerable.Range(1, Math.Max(0, WorldList.PageCount(_worlds.Length) - 1))
+            .Select(MenuPictureOn)
+            .Where(_ => IsVip);
+        // VIP's atlases are two to three megabytes each, and with ten worlds the boot
+        // would wait for twenty-three. It waits for the first page's five - what the
+        // first cave can need - and fetches the second page's after the game is up, so
+        // a player choosing a hidden world finds its atlas already there, or fetched
+        // the old way if they were quicker. The faithful build's sheets are small and
+        // all come at once.
+        var sheets = _worlds.Select(w => SheetFor(w.Sheet)).ToArray();
+        var bootSheets = IsVip ? sheets.Take(WorldList.PageSize) : sheets;
+        var laterSheets = IsVip ? sheets.Skip(WorldList.PageSize).ToArray() : [];
+        var pictures = bootSheets
+            .Concat(portraitFiles)
+            .Concat(menuPages)
+            .Append(TitlePicture)
+            .Append(MenuPicture)
+            .Concat(TitleSheet is null ? [] : [TitleSheet])
+            .ToArray();
+
+        // Decoded as well as fetched: what the first screens show. Four, which
+        // is exactly the size of game.js's decoded-picture cache.
+        var decodeFirst = new[] { TitlePicture, TitleSheet, MenuPicture, SheetFor("hunter") }
+            .OfType<string>()
+            .ToArray();
+
+        // The small data files start now as well, so they arrive behind the bar
+        // rather than as a chain of round trips after it. Awaited further down,
+        // where they were always awaited.
+        var menuBoxTask = IsVip
+            ? Http.GetFromJsonAsync<MenuBox>(Stamped("vip/menu.json"))
+            : Task.FromResult<MenuBox?>(null);
+        var cellmapsTask = Http.GetByteArrayAsync(Stamped("game/cellmaps.bin"));
+        var tablesTask = Http.GetFromJsonAsync<CaveTables>(Stamped("game/caves.json"));
+        var tilesTask = Http.GetFromJsonAsync<TileSet>(Stamped("game/sprites.json"));
+
+        // The title animation's rectangles, read out of the executable by
+        // tools/webassets.py rather than typed anywhere. A build without frames
+        // does not fetch them.
+        var layoutTask = TitleSheet is not null
+            ? Http.GetFromJsonAsync<System.Text.Json.JsonDocument>(Stamped(TitleLayout))
+            : Task.FromResult<System.Text.Json.JsonDocument?>(null);
+
+        // The 1987 theme as pattern data, for the speaker path only. A VIP build
+        // streams its own track and does not ship this file: fetching it here
+        // would be the one place the public build reached for the original music.
+        var themeTask = IsVip
+            ? Task.FromResult<System.Text.Json.JsonDocument?>(null)
+            : Http.GetFromJsonAsync<System.Text.Json.JsonDocument>(Stamped("game/music.json"));
+
+        await _js.InvokeAsync<bool>("preloadAll", pictures, IsVip, decodeFirst, _boot, _bootPercent);
+        if (_disposed) return;
+
+        await _js.InvokeAsync<bool>("init", _canvas, SheetFor("hunter"), AtlasScale, IsVip);
+        if (laterSheets.Length > 0) _ = PreloadLater(laterSheets);
+
+        // The component owns the elements; game.js owns what they mean.
+        await _js.InvokeAsync<bool>("attachPad", _pad, _fire);
+
+        _self = DotNetObjectReference.Create(this);
+        await _js.InvokeAsync<bool>("watchOutside", _self);
+
+        // The build decides this, before anything can be heard. A VIP build never
+        // loads the square-wave path and a faithful one never fetches the enhanced
+        // modules at all.
+        if (IsVip)
+        {
+            await _js.InvokeAsync<bool>("setAudioMode", "vip");
+
+            // VIP's select screen is laid out for a 1536 by 960 picture rather
+            // than MENU_I's 320 by 200, so the selection has to be framed on the
+            // boxes the portraits were drawn into.
+            //
+            // READ, NOT TYPED. These five fractions used to be written out here
+            // AND in MENU_BOX in tools/vipart.py, each with a comment asking the
+            // next person to keep them in step. Two copies of a number with a
+            // note attached is not one source of truth. vipart.py writes them
+            // beside the picture it drew with them.
+            //
+            // A missing file leaves the selection unframed rather than framed in
+            // the wrong place: the numbers are the drawing's, and guessing them
+            // is what this change exists to stop.
+            var box = await menuBoxTask;
+            if (box is not null)
+            {
+                _menuBox = box;
+                await _js.InvokeVoidAsync("setMenuBox", box.X, box.Y, box.W, box.H, box.Step);
+            }
+        }
+
+        // The fetches below can outlast the page.
+        // Each await is a place the component can go away.
+        if (_disposed) return;
+
+        // TOGETHER, not one after another, and started before the load phase -
+        // see there. None of these depends on any other; they were awaited in
+        // sequence for no reason beyond how the lines were typed, which on a
+        // phone is four round trips of latency stacked before anything appears.
+        var cellmaps = await cellmapsTask;
+        var tables = await tablesTask;
+        _tiles = await tilesTask;
+        _titleLayout = await layoutTask;
+
+        // The host takes over from here. The component keeps _worlds as well,
+        // because the sheet filenames and the floor colours are presentation and
+        // the host only wants the world numbers - same array, two readers.
+        _host = new GameHost(cellmaps, tables ?? new CaveTables(), _worlds);
+
+        // The faithful build's 1987 theme, started with the load phase above.
+        using (var theme = await themeTask)
+        {
+            if (theme is not null)
+                await _js.InvokeVoidAsync("loadMusic", theme.RootElement.Clone());
+        }
+
+        if (_disposed) return;
+
+        await ApplyStoredSettings();
+
+        if (_disposed) return;
+
+        // THE TITLE GOES UP FIRST, and the theme buffers behind it.
+        //
+        // This used to await whenMusicReady before showing anything, which has
+        // an eight-second ceiling - so a slow line held a blank screen for eight
+        // seconds to make sure a tune was ready for a keypress that had not
+        // happened yet. The music is armed rather than started, and the earliest
+        // it can sound is the player's first gesture, which is necessarily after
+        // they can see something to press.
+        await _js.InvokeAsync<bool>("showTitle", TitlePicture, TitleSheet,
+                                    _titleLayout?.RootElement);
+
+        // Armed, not started. Browsers refuse audio before the page has been
+        // interacted with at all, so the earliest legal moment is the player's
+        // first gesture - and game.js now takes it in the handler itself rather
+        // than waiting for the next step to notice.
+        await _js.InvokeAsync<bool>("armMusic");
+
+        // Buffered now, with the title already up. Not awaited into the loop:
+        // armMusic has taken the gesture's side of this, so all that is left is
+        // for the bytes to arrive, and nothing after this line needs them.
+        _ = _js.InvokeVoidAsync("whenMusicReady").AsTask();
+
+        if (TitleSheet is not null) _title = new TitleAnimation(_titleRandom);
+        StartLoop();
+
+        // The title is painted, so the panel can go: faded by game.js, then
+        // removed here. What it reveals is the picture, never a black canvas.
+        await _js.InvokeAsync<bool>("finishBoot", _boot);
+        _booting = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ToMenu()
+    {
+        _host!.ToMenu();
+        if (_js is not null) await ShowMenu();
+    }
+
+    /// <summary>Steps one cave, rolling into the next or previous world.</summary>
+    private async Task Go(int by)
+    {
+        _host!.Go(by);
+        await SetWorldSheet();
+    }
+
+    private async Task SetWorldSheet()
+    {
+        if (_js is null || _host is null || _worlds.Length == 0) return;
+        var world = _worlds[_host.World];
+        await _js.InvokeAsync<bool>("setSheet", SheetFor(world.Sheet), world.Floor, AtlasScale);
+
+        // After the sheet, because setSheet drops the silhouette it built for
+        // the last world - the positions are the same across worlds but the
+        // pixels are not.
+        if (_tiles is not null)
+        {
+            await _js.InvokeVoidAsync("setOutlinedTiles", _tiles.OutlinedTiles());
+            await _js.InvokeVoidAsync("setShadowed", _tiles.ShadowedTiles());
+            await _js.InvokeVoidAsync("setEmissive", _tiles.EmissiveTiles());
+        }
+    }
+
+    private void StartLoop()
+    {
+        _loop = new CancellationTokenSource();
+        var token = _loop.Token;
+
+        // Kept, not fire-and-forget. Disposal has to know when the last step has
+        // actually finished, because a step in flight is holding the interop
+        // reference disposal is about to release.
+        _loopTask = Task.Run(async () =>
+        {
+            // Monotonic, and it counts the step's own work. Task.Delay after the
+            // work made the period 100 ms PLUS the work, which ran the game
+            // eleven per cent slow in both builds and worse in VIP, whose larger
+            // canvas put drawing time straight into simulation time. StepPacer
+            // carries the reasoning and the stall policy.
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var pacer = new StepPacer(clock.Elapsed.TotalMilliseconds);
+
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    // Wait, mark the start, then work - the order at 0xEDA5,
+                    // which calls the pacing routine before anything else. The
+                    // deadline is re-hung before the step rather than after it,
+                    // so a step resuming from a long stall cannot be followed
+                    // immediately by another.
+                    var wait = pacer.Until(clock.Elapsed.TotalMilliseconds);
+
+                    // At least one millisecond even when the step is already
+                    // overdue. There is one thread here, and a loop that never
+                    // really yields starves the rendering it is waiting on, so a
+                    // step that overran would make every step after it worse.
+                    await Task.Delay((int)Math.Max(1, Math.Round(wait)), token);
+
+                    // PAUSED MEANS PAUSED. Not a slower step, not a step that
+                    // does nothing - no step at all, and the pacer re-based on
+                    // the way out so the first step after a resume is not
+                    // treated as overdue by however long the player was away.
+                    if (await Interrupted())
+                    {
+                        pacer.Begin(clock.Elapsed.TotalMilliseconds);
+                        continue;
+                    }
+
+                    pacer.Begin(clock.Elapsed.TotalMilliseconds);
+                    await Tick();
+                }
+                catch (OperationCanceledException) { return; }
+                catch (Exception ex)
+                {
+                    if (_host is not null) _host.Message = ex.Message;
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+            }
+        }, token);
+    }
+
+    /// <summary>
+    /// The screen a tap-to-start was last set for, so the renderer is told when
+    /// it CHANGES rather than ten times a second for a value that has not.
+    /// </summary>
+    private GameScreen? _tapScreen;
+
+    /// <summary>
+    /// A tap on the picture is Enter, outside a cave. Every screen that asks to
+    /// be pressed is the canvas, so this is what lets a phone get past the title
+    /// at all - and it is off during play, or a hand resting on the screen plays
+    /// the game.
+    ///
+    /// <para>
+    /// Called at BOTH ends of a tick, and the second call is the one that
+    /// matters. A tick can change the screen part way through - the select
+    /// screen starts a world, loads a sheet and paints a cave - and updating the
+    /// gate only on the way in left a whole tick during which the cave was on
+    /// screen and a tap on it was still Enter. Astra, 19 September 2026.
+    /// </para>
+    /// </summary>
+    private async Task FollowScreenWithTaps()
+    {
+        if (_js is null || _tapScreen == Screen) return;
+
+        _tapScreen = Screen;
+        await _js.InvokeVoidAsync("tapToStart", Screen != GameScreen.Playing);
+    }
+
+    private async Task Tick()
+    {
+        if (_js is null) return;
+
+        // Nothing is simulated while a cave ends, so not stepping for a few seconds
+        // changes nothing the engine or a recording can see. It is not the page
+        // being away, which is what Interrupted() is for: the cartoon is the game.
+        if (_cartoonRunning)
+        {
+            if (await _js.InvokeAsync<bool>("cartoonPlaying")) return;
+            await CartoonEnded();
+        }
+
+        await FollowScreenWithTaps();
+
+        var raw = await _js.InvokeAsync<int>("readInput");
+
+        if (!_audioOpen)
+        {
+            // Any gesture, not `raw != 0`. readInput reports directions and fire
+            // only, and the title screen asks for Enter - which is neither - so
+            // the old test meant the theme did not start until the player first
+            // moved inside a cave, and never at all for one who did not.
+            //
+            // The theme itself is no longer started from here. game.js starts it
+            // in the gesture handler, which is both earlier and the only place
+            // Safari will honour a resume; this just notices that it happened and
+            // takes the glyph from what is actually sounding.
+            _audioOpen = await _js.InvokeAsync<bool>("unlockIfGestured");
+
+            // What is SOUNDING, which the glyph no longer reads - it shows what
+            // was asked for. Kept because "is it playing" is a different question
+            // from "was it wanted", and ToggleMusic needs the first to decide
+            // whether a play is worth attempting.
+            if (_audioOpen) _music = await _js.InvokeAsync<bool>("musicPlaying");
+        }
+
+        switch (Screen)
+        {
+            case GameScreen.Title: await TitleTick(); break;
+            case GameScreen.Menu: await MenuTick(); break;
+            case GameScreen.Interlude: await InterludeTick(); break;
+            default: await PlayTick(raw); break;
+        }
+
+        await Announce();
+
+        // Again, because any of those can have changed the screen. The select
+        // screen starts a world, loads a sheet and paints a cave inside this one
+        // call, and leaving the gate until the next tick left the cave on screen
+        // with a tap on it still counting as Enter.
+        await FollowScreenWithTaps();
+    }
+
+    private async Task TitleTick()
+    {
+        if (!await Tap("Enter") && !await Tap(" "))
+        {
+            await AnimateTitle();
+            return;
+        }
+
+        _title = null;
+        _host!.Selected = 0;
+        await ToMenu();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Advances the title animation, from <c>0xF29C</c>.
+    ///
+    /// The step is 10 Hz and the animation counts interrupts, so this hands it the
+    /// six a step is worth and draws on the ticks it says a frame is due - which is
+    /// every seventh, so a new frame lands on five steps out of six. Advancing once
+    /// a step instead would run it at 10 frames a second rather than 8.6, which
+    /// sounds like nothing and is the difference between the toss taking 1.05
+    /// seconds and 0.9.
+    /// </summary>
+    private async Task AnimateTitle()
+    {
+        if (_title is null || _js is null) return;
+
+        var due = false;
+        for (var i = 0; i < Simulation.TicksPerStep; i++) due |= _title.Tick();
+
+        if (due)
+        {
+            var f = _title.Frame;
+            await _js.InvokeAsync<bool>("paintTitleFrame",
+                                        f.Arm, f.Diamond, f.Face, f.AlternateFace, f.Foot);
+        }
+
+        // Twenty seconds and the original gives up and runs the attract panel
+        // again. There is no attract panel here, so it starts the toss over rather
+        // than stopping on whatever frame it had reached.
+        //
+        // VIP waits for the gem to be back in his hand first. Twenty seconds is
+        // nine and a half tosses, so the restart lands with the gem at the top
+        // of its throw - invisible at 8.6 frames a second, and a gem vanishing
+        // from mid-air to his palm when the title is drawn every display frame.
+        // The wait is at most half a toss, and the counters are otherwise the
+        // engine's own.
+        if (_title.Finished && (!IsVip || _title.Frame.Diamond == 0))
+            _title = new TitleAnimation(_titleRandom);
+    }
+
+    /// <summary>
+    /// Holds the world-complete screen until the player presses something, or
+    /// until the reward track finishes on its own.
+    /// </summary>
+    /// <remarks>
+    /// Any key rather than a named one: this is a "press something" screen, and a
+    /// player who has just finished a world should not have to guess which key.
+    /// <para>
+    /// The auto-advance matters. The track runs 82 seconds and a player who walks
+    /// away would otherwise come back to a silent held screen with no indication
+    /// it is waiting for them. When the music has finished, the celebration is
+    /// over and the screen has done its job.
+    /// </para>
+    /// </remarks>
+    private async Task InterludeTick()
+    {
+        if (_js is null) return;
+
+        var pressed = await _js.InvokeAsync<bool>("takeAnyTap");
+        var finished = !await _js.InvokeAsync<bool>("worldStingPlaying");
+
+        if (!pressed && !finished) return;
+
+        if (pressed) await _js.InvokeVoidAsync("fadeWorldSting");
+
+        // The world track displaced the theme; put it back either way, whether
+        // the screen ended by a press or by the music running out.
+        await _js.InvokeVoidAsync("resumeTheme");
+
+        // Finishing a world returns to the chooser, which is what the original
+        // does: 0xFE3E calls the world-select routine at 0x105E3, and that screen
+        // comes up highlighting the world just played. There is no automatic
+        // advance from one world to the next, and no ending after the fifth -
+        // "the next world" to the original means moving one menu selection.
+        //
+        // Score and lives come with you. 0xFE1C tests lives and jumps straight to
+        // 0xFE38 while any remain, skipping the score clears at 0xFE26 and 0xFE2C
+        // and the five-life reset at 0xFE32. Only running out of lives clears
+        // them, and that is a different path entirely.
+        _host!.Selected = _host.World;   // the chooser opens on the world just played
+        await ToMenu();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task MenuTick()
+    {
+        // Both taps are read whether or not the highlight can move, because a tap
+        // left at the first world still has to be consumed - otherwise it sits in
+        // the set and fires the moment the highlight has somewhere to go.
+        var left = await Tap("ArrowLeft");
+        var right = await Tap("ArrowRight");
+
+        var moved = false;
+        if (left) moved |= _host!.MoveSelection(-1);
+        if (right) moved |= _host!.MoveSelection(+1);
+
+        if (await Tap("Enter") || await Tap(" "))
+        {
+            _host!.StartSelectedWorld();
+            await SetWorldSheet();
+            await Paint();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (moved)
+        {
+            await ShowMenu();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task<bool> Tap(string key) =>
+        _js is not null && await _js.InvokeAsync<bool>("takeTap", key);
+
+    /// <summary>
+    /// One tick of play: read the pad, let the host decide, then carry out what it
+    /// asked for.
+    ///
+    /// The order below is the host's order and it matters. The sheet goes in before
+    /// the paint, because a cave that has just changed would otherwise be drawn with
+    /// the last world's sprites. The tap set is cleared before the world sting
+    /// starts. And the sting goes after the step's own sounds, not before.
+    /// </summary>
+    private async Task PlayTick(int raw)
+    {
+        if (_host is null) return;
+
+        var action = new PlayerAction(
+            (byte)(raw & 0x0F),
+            (byte)((raw >> 4) & 0x0F),
+            (raw & 256) != 0);
+
+        var fx = _host.Tick(action);
+
+        if (fx.SheetChanged) await SetWorldSheet();
+
+        // Six frames a step, because the driver runs on a 60 Hz interrupt while a
+        // step is one pass of the 10 Hz main loop. Playing only the last of them
+        // would throw five sixths of the game's sound away.
+        //
+        // They are handed over in one call rather than six interop round trips: at
+        // ten steps a second that would be sixty crossings a second for something
+        // the browser can schedule itself, and each one is awaited.
+        if (!_muted && fx.Sounds.Count > 0) await PlaySounds(fx.Sounds);
+
+        if (fx.ClearTaps) await _js!.InvokeVoidAsync("clearTaps");
+
+        if (fx.Sting == Sting.World) await _js!.InvokeAsync<bool>("playWorldSting");
+        else if (fx.Sting == Sting.Cave) await _js!.InvokeAsync<bool>("playSting");
+
+        await Paint(fx.Observations);
+
+        await StartCartoon();
+
+        // Only on a step. A tick that merely counted a hold down repaints the cave
+        // and leaves the DOM alone, which is what this did before the host was
+        // pulled out of it - and the step 100 ms later picks the message up.
+        if (fx.Stepped) await InvokeAsync(StateHasChanged);
+    }
+
+    // ---- the original's cartoon ---------------------------------------------
+
+    /// <summary>A cartoon is playing, or loading. The host is not stepped meanwhile.</summary>
+    private bool _cartoonRunning;
+
+    /// <summary>The message a cartoon has already been started for, so one cave end plays one.</summary>
+    private string? _cartoonFor;
+
+    /// <summary>
+    /// Plays the cartoon for a cave that has just ended, for a world that has one.
+    ///
+    /// The original plays WIN, LOSE or TIME over the frozen cave near the player when
+    /// a cave ends (docs/FORMATS.md, "When each cartoon plays"), and #137 is the port
+    /// not doing so. Which one comes from <see cref="Cartoons.For"/>; the strip, the
+    /// timing and the placement are game.js and cartoon.js. The five hidden worlds
+    /// have none: Aleksi Sahala's art carries no cartoons.
+    ///
+    /// VIP plays the same three, redrawn at eight to one (tools/vipcartoons.py). The
+    /// rules are the same; only the strip differs, see <see cref="Cartoons.StripFor"/>.
+    /// </summary>
+    private async Task StartCartoon()
+    {
+        if (_host is null || _js is null) return;
+
+        if (_host.Message is not { Length: > 0 } message)
+        {
+            _cartoonFor = null;
+            return;
+        }
+
+        if (message == _cartoonFor) return;
+        _cartoonFor = message;
+
+        var kind = Cartoons.For(message, _host.Sim?.TimeRemaining ?? 0);
+        if (kind == CartoonKind.None || _host.CurrentWorld.Cartoon is not { } strip) return;
+
+        // Where Rockford was. A cave with no player has none, and the middle of the
+        // view stands in for it.
+        var origin = _host.View;
+        var cell = _host.Sim?.PlayerCell ?? -1;
+        var column = cell >= 0 ? CaveGrid.ColumnOf(cell) : origin.Column + Viewport.Columns / 2;
+        var row = cell >= 0 ? CaveGrid.RowOf(cell) : origin.Row + Viewport.Rows / 2;
+
+        _cartoonRunning = true;
+        var started = await _js.InvokeAsync<bool>("startCartoon", Stamped($"game/{Cartoons.StripFor(strip, IsVip)}"),
+                                                  (int)kind - 1, column, row,
+                                                  origin.Column, origin.Row);
+        if (!started) _cartoonRunning = false;
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// A cartoon is over. It stood in for the host's own hold, so the hold's ticks
+    /// are taken now rather than made to follow it: the original goes straight on to
+    /// the next cave, or the next life.
+    ///
+    /// Not a game over. That keeps its hold, because the words are the only thing
+    /// on the screen that says so.
+    /// </summary>
+    private async Task CartoonEnded()
+    {
+        _cartoonRunning = false;
+
+        // Bounded, because a loop on host state that a bug could stop advancing
+        // would hang the page. A hold is twelve ticks or thirty.
+        for (var guard = 0; guard < 64 && _host is { HoldUntil: > 0, Message: not "game over" } host
+                                       && host.Screen == GameScreen.Playing; guard++)
+        {
+            await PlayTick(0);
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PlaySounds(IReadOnlyList<SoundFrame> frames)
+    {
+        var events = new byte[frames.Count];
+        var divisors = new int[frames.Count];
+
+        for (var i = 0; i < frames.Count; i++)
+        {
+            events[i] = (byte)frames[i].Event;
+            divisors[i] = frames[i].Divisor;
+        }
+
+        await _js!.InvokeVoidAsync("playSounds", events, divisors,
+                                   StepMilliseconds / 1000.0);
+    }
+
+    private async Task ToggleSound()
+    {
+        _muted = !_muted;
+        if (_js is not null) await _js.InvokeVoidAsync("setMuted", _muted);
+
+        // Stored the way the setting reads rather than the way the flag does:
+        // "effects" is on when _muted is not.
+        await Remember("effects", !_muted);
+    }
+
+    /// <summary>
+    /// Switches between the two sound presentations. The VIP module is fetched the
+    /// first time it is asked for, so the faithful build never downloads it.
+    /// </summary>
+    private async Task ToggleEnhanced()
+    {
+        if (_js is null) return;
+        _enhanced = await _js.InvokeAsync<bool>("setAudioMode", _enhanced ? "faithful" : "vip");
+
+        // The VIP module is constructed fresh when it first loads and starts on
+        // its own default cut, so a choice made before that has to be reapplied
+        // or it is silently lost on the first switch into VIP.
+        if (_enhanced && _vocal)
+        {
+            await _js.InvokeAsync<string?>("setMusicCut", "vocal");
+        }
+    }
+
+    /// <summary>
+    /// Switches the VIP theme between the instrumental and the vocal cut.
+    /// </summary>
+    /// <remarks>
+    /// The field follows what JavaScript reports rather than what was asked for.
+    /// Before the VIP module is loaded there is nothing to switch and it answers
+    /// null, and a control that flipped anyway would be lying about what is
+    /// about to play.
+    /// </remarks>
+    /// <summary>
+    /// Puts back what the player chose last time, before anything can be heard.
+    ///
+    /// <para>
+    /// Order matters here and it is the reason this is a method rather than
+    /// three lines at the call site. It runs BEFORE <c>armMusic</c>, so a player
+    /// who muted the theme does not get a bar of it on their first press while
+    /// the toggle catches up.
+    /// </para>
+    ///
+    /// <para>
+    /// The presentation switch is deliberately NOT stored. It is a build
+    /// property - two releases rather than two settings, and ROCKFORD-VIP.md is
+    /// explicit about it - and the runtime switch exists in a debug build so the
+    /// two can be compared side by side. Remembering which one you last compared
+    /// would mean a debug build starting as the other release, which is exactly
+    /// the confusion the build flag exists to prevent.
+    /// </para>
+    /// </summary>
+    private async Task ApplyStoredSettings()
+    {
+        if (_js is null || _settings is null) return;
+
+        var stored = await _settings.InvokeAsync<StoredSettings>("load");
+        if (_disposed) return;
+
+        // EVERY value, including the ones that match the default.
+        //
+        // Applying only the disabled ones assumed the module starts enabled, and
+        // it does not always: releasing an IJSObjectReference does not unload the
+        // module, so game.js keeps its mute state across a remount. Stored
+        // "effects on" plus a module left muted by the previous mount left the
+        // audio silent under a control saying it was on - and that is reachable
+        // whenever a write fails and a remount follows. Astra, 19 September 2026.
+        _muted = !stored.Effects;
+        await _js.InvokeVoidAsync("setMuted", _muted);
+
+        // Nullable, so a settings blob written before this existed comes back
+        // as "not stated" and takes the default rather than false-by-accident.
+        _outlines = stored.Outlines ?? false;
+        await _js.InvokeVoidAsync("setOutlines", _outlines);
+
+        // ON by default, unlike the outlines. This one changes how the cave
+        // FEELS and never what can be seen in it - there is no darkening pass
+        // - so it is a default rather than an aid somebody has to go and find.
+        _lighting = IsVip && (stored.Lighting ?? true);
+        await _js.InvokeVoidAsync("setLighting", _lighting);
+
+        _musicWanted = stored.Music;
+        await _js.InvokeVoidAsync("setMusicEnabled", _musicWanted);
+        if (!_musicWanted) _music = false;
+
+        // The cut needs a VIP theme to be a cut OF, so the call is skipped in a
+        // faithful build - but the field is set either way, or a debug build
+        // switching to VIP would start on the wrong one.
+        _vocal = stored.Vocal;
+
+        _musicLevel = Math.Clamp(stored.MusicLevel, 0, 100);
+        _effectsLevel = Math.Clamp(stored.EffectsLevel, 0, 100);
+        await _js.InvokeVoidAsync("setLevel", "music", _musicLevel);
+        await _js.InvokeVoidAsync("setLevel", "effects", _effectsLevel);
+
+        _reducedMotion = stored.ReducedMotion;
+        await _js.InvokeVoidAsync("setReducedMotion", _reducedMotion);
+
+        if (_enhanced)
+        {
+            var got = await _js.InvokeAsync<string?>("setMusicCut", _vocal ? "vocal" : "instrumental");
+            if (got is not null) _vocal = got == "vocal";
+        }
+
+        // ALWAYS called, including for a null.
+        //
+        // Calling it only for an object left a remount running the previous
+        // mount's bindings: releasing an IJSObjectReference does not unload the
+        // module, so game.js keeps them, and skipping the call meant "no stored
+        // bindings" could not put the shipped set back. The same shape of defect
+        // as the sound settings had. Astra, 19 September 2026.
+        //
+        // setBindings makes the shipped set of anything it cannot use, so a null
+        // and a rejected blob land in the same place.
+        var bindings = stored.Bindings is { ValueKind: System.Text.Json.JsonValueKind.Object } b
+            ? (object)b
+            : null;
+
+        await _js.InvokeVoidAsync("setBindings", bindings);
+
+        _settingsReady = true;
+
+        // The glyphs are drawn from these fields and this runs after the first
+        // render, so without this the footer shows yesterday's answer until
+        // something else happens to redraw it. On the title screen nothing does:
+        // the loop animates the canvas and leaves the DOM alone, so a muted
+        // player saw a control claiming their sound was on for as long as they
+        // stayed on the title.
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Records one choice. Failure is not worth reporting: the setting still
+    /// applies to this session, which is exactly what happened before any of
+    /// this existed.
+    /// </summary>
+    private async Task Remember(string name, object? value)
+    {
+        if (_disposed || _settings is null) return;
+
+        try
+        {
+            await _settings.InvokeVoidAsync("set", name, value);
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit went while this was in flight. The choice applied to
+            // the session it was made in, which is what happened before any of
+            // this existed.
+        }
+        catch (ObjectDisposedException)
+        {
+            // Disposal won the race. Same answer.
+        }
+    }
+
+    /// <summary>
+    /// What settings.js hands back. Names match its DEFAULTS.
+    ///
+    /// The bindings come through as raw JSON rather than a typed shape: what a
+    /// valid binding is belongs to game.js, which knows which actions exist, and
+    /// duplicating that here would put the rule in two places with nothing
+    /// keeping them agreed.
+    /// </summary>
+    private sealed record StoredSettings(bool Music, bool Effects, bool Vocal,
+                                         System.Text.Json.JsonElement? Bindings,
+                                         int MusicLevel, int EffectsLevel,
+                                         bool? ReducedMotion, bool? Outlines,
+                                         bool? Lighting);
+
+    private bool _outlines;
+    private bool _lighting;
+
+    private async Task ToggleLighting()
+    {
+        if (_js is null) return;
+
+        _lighting = !_lighting;
+        await _js.InvokeVoidAsync("setLighting", _lighting);
+        await Remember("lighting", _lighting);
+    }
+
+    private async Task ToggleOutlines()
+    {
+        if (_js is null) return;
+
+        _outlines = !_outlines;
+        await _js.InvokeVoidAsync("setOutlines", _outlines);
+        await Remember("outlines", _outlines);
+    }
+
+    private async Task ToggleCut()
+    {
+        if (_js is null) return;
+        // The intent, decided here and stored here. setMusicCut answers null when
+        // the VIP module is not loaded, and storing what came back meant an
+        // Instrumental press wrote Vocal - the opposite of what was asked for.
+        var vocal = !_vocal;
+        _vocal = vocal;
+
+        var got = await _js.InvokeAsync<string?>("setMusicCut", vocal ? "vocal" : "instrumental");
+        if (got is not null) _vocal = got == "vocal";
+
+        await Remember("vocal", vocal);
+    }
+
+    private async Task ToggleMusic()
+    {
+        if (_js is null) return;
+
+        // From the INTENT, not from what is sounding. Before the first gesture
+        // nothing is playing, and reading _music there made the glyph offer to
+        // turn on music that was already wanted.
+        var wanted = !_musicWanted;
+        _musicWanted = wanted;
+
+        if (!wanted)
+        {
+            // Not stopMusic. This glyph owns the whole musical channel - the
+            // theme, the cave sting and the world-complete track - because a
+            // fanfare is music. Pressing it during the world-complete screen
+            // used to leave 82 seconds of track playing underneath a control
+            // that said the music was off.
+            await _js.InvokeVoidAsync("setMusicEnabled", false);
+            _music = false;
+        }
+        else
+        {
+            await _js.InvokeVoidAsync("setMusicEnabled", true);
+            _music = await _js.InvokeAsync<bool>("playMusic");
+        }
+
+        // Stored last, and stored as the intent. playMusic answers false when the
+        // page has not been interacted with yet, so storing _music would turn
+        // "I want music" into "music is off" on the very next visit, for a
+        // player who had asked for the opposite.
+        await Remember("music", wanted);
+    }
+
+    /// <param name="observations">
+    /// What the step reported, or nothing at all. Only the moves are sent on: the
+    /// renderer slides a sprite back from where it came, and landings, blasts and
+    /// shots belong to the effects layer, which does not exist yet.
+    ///
+    /// A paint with no observations - the select screen, a repaint after a resize -
+    /// slides nothing, which is right. There is no step to animate.
+    /// </param>
+    /// <summary>
+    /// The simulation the last paint drew. A cave load builds a new one, so this
+    /// changing IS the "new cave" signal - exact, where inferring it from how far
+    /// the camera jumped was a guess that missed a respawn framing within a cell of
+    /// where the last cave ended.
+    /// </summary>
+    private Simulation? _painted;
+
+    private async Task Paint(IReadOnlyList<Observation>? observations = null)
+    {
+        if (_host?.Sim is null || _js is null || _tiles is null) return;
+
+        // Two numbers per cell of the WHOLE cave: where the sprite sits on the
+        // sheet.
+        //
+        // This used to send the 20 by 11 window alone, which is a quarter of the
+        // payload and exactly the wrong quarter as soon as the view can stand part
+        // way between two cells: a scroll in progress needs the row and column it
+        // is sliding off as well as the ones it is sliding on. 880 cells ten times
+        // a second is nothing, and sending the cave means the renderer never has
+        // to come back and ask for more.
+        //
+        // The window itself is still 20 by 11. What is drawn has not widened.
+        var tiles = new int[CaveGrid.Width * CaveGrid.Height * 2];
+        for (var y = 0; y < CaveGrid.Height; y++)
+        for (var x = 0; x < CaveGrid.Width; x++)
+        {
+            var cell = CaveGrid.AddressOf(x, y);
+            var at = _tiles.For(_host.Sim.Grid.ValueAt(cell), _host.Sim.Grid.StateAt(cell),
+                                _host.Frame, _host.Pose);
+            var i = (y * CaveGrid.Width + x) * 2;
+            tiles[i] = at[0];
+            tiles[i + 1] = at[1];
+        }
+
+        // The origin goes with it, in whole cells. Viewport still moves a cell at a
+        // time exactly as 0xFF87 does - the sliding between them is the renderer's
+        // and never reaches the camera's latches.
+        // Four numbers a move, flattened. One array of numbers crosses the interop
+        // boundary cleanly where a list of records does not, and a step moves a
+        // handful of things, so this is short.
+        //
+        // A move is only sent on if the thing that moved is STILL THERE. That check
+        // is the whole reason this loop is not three lines.
+        //
+        // A move is reported the instant it happens, and the rest of the scan runs
+        // afterwards. So a player can walk into a cell and be blasted in the same
+        // step: the move is true, and the cell now holds an explosion phase. Sending
+        // it would have the renderer slide that explosion back out of the cell the
+        // player came from - and "deaths and blasts resolve immediately" would be
+        // false of the one thing it is supposed to be true of.
+        //
+        // Reproduced before it was fixed, and recorded in
+        // docs/astra-review-2026-09-19.md: value 0x10 moved into (5,6), and 0x1C -
+        // a space-explosion phase - is what was in the cell at the end of the step.
+        //
+        // The comparison is by FAMILY and not by value, because a boulder reported
+        // moving is 0x44 while the cell it lands in holds 0x46 or 0x47. And a family
+        // match is a filter rather than a proof: it cannot tell a boulder that moved
+        // in from a different boulder that replaced it. Anything it rejects snaps,
+        // which is always safe.
+        var moves = MovesToSend(observations);
+
+        // The located events VIP's effects layer draws from: a landing, a blast,
+        // a shot, a dig and a collection. Flattened the same way and for the
+        // same reason - three numbers each, one array across the boundary.
+        //
+        // NOT from SoundEvent, and that is the point of the observation surface.
+        // A sound frame says which of eight requests the driver served, carries
+        // no location, and uses ONE request for both firing and an explosion.
+        // Shaking the screen on every Blast would shake it on every shot.
+        var events = EffectsToSend(observations);
+
+        var freshCave = !ReferenceEquals(_painted, _host.Sim);
+        _painted = _host.Sim;
+
+        await _js.InvokeVoidAsync("draw", tiles, _host.View.Column, _host.View.Row,
+                                  moves, freshCave, events);
+    }
+
+    /// <summary>
+    /// Flattens the located events the effects layer draws from.
+    /// </summary>
+    /// <remarks>
+    /// Three numbers each - kind, column, row - and null when there is nothing,
+    /// so a quiet step sends no array at all.
+    ///
+    /// <para>
+    /// A dig and a collection are not observation kinds of their own, and they
+    /// do not need to be. Both are a PLAYER move plus something the host
+    /// already reports: the treasure count going up says a collection happened,
+    /// and it happened where the player arrived. Adding kinds to the engine for
+    /// something derivable from what it already says would widen a surface that
+    /// is deliberately narrow.
+    /// </para>
+    /// </remarks>
+    private int[]? EffectsToSend(IReadOnlyList<Observation>? observations)
+    {
+        if (_host?.Sim is null || observations is not { Count: > 0 }) return null;
+
+        var collected = _host.Collected;
+        var gained = collected > _lastCollected;
+        _lastCollected = collected;
+
+        List<int>? flat = null;
+
+        foreach (var o in observations)
+        {
+            var effect = o.Kind switch
+            {
+                ObservationKind.Landed => EffectLanded,
+                ObservationKind.Blasted => EffectBlasted,
+                ObservationKind.Fired => EffectFired,
+                _ => -1,
+            };
+
+            // A player move is a dig or a collection depending on what the count
+            // did. Only the player's, because only the player digs.
+            if (effect < 0 && o.Kind == ObservationKind.Moved && o.Value == RuntimeTile.Player)
+            {
+                effect = gained ? EffectCollected : EffectDug;
+                gained = false;
+            }
+
+            if (effect < 0) continue;
+
+            flat ??= [];
+            flat.Add(effect);
+            flat.Add(CaveGrid.ColumnOf(o.To));
+            flat.Add(CaveGrid.RowOf(o.To));
+        }
+
+        return flat?.ToArray();
+    }
+
+    private const int EffectDug = 0;
+    private const int EffectCollected = 1;
+    private const int EffectLanded = 2;
+    private const int EffectBlasted = 3;
+    private const int EffectFired = 4;
+
+    /// <summary>The treasure count as of the last step, for spotting a collection.</summary>
+    private int _lastCollected;
+
+    /// <summary>
+    /// Flattens the moves worth animating, or null when there are none.
+    /// </summary>
+    private int[]? MovesToSend(IReadOnlyList<Observation>? observations)
+    {
+        if (_host?.Sim is null || observations is not { Count: > 0 }) return null;
+
+        var grid = _host.Sim.Grid;
+        List<int>? flat = null;
+
+        foreach (var o in observations)
+        {
+            if (o.Kind != ObservationKind.Moved) continue;
+            if (!RuntimeTile.SameFamily(o.Value, grid.ValueAt(o.To))) continue;
+
+            var (fromColumn, fromRow) = o.FromCell;
+            var (toColumn, toRow) = o.ToCell;
+
+            flat ??= new List<int>(observations.Count * 4);
+            flat.Add(fromColumn);
+            flat.Add(fromRow);
+            flat.Add(toColumn);
+            flat.Add(toRow);
+        }
+
+        return flat?.ToArray();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+
+        if (_loop is not null) await _loop.CancelAsync();
+
+        // Wait for the step in flight. Cancelling the token only stops the NEXT
+        // one; without this, a step already inside Tick is still calling through
+        // _js when the line below disposes it.
+        //
+        // The timeout is a safety net rather than an expectation - a cancelled
+        // loop settles within a step. There is one thread here, and a dispose
+        // that hangs takes the navigation with it.
+        if (_loopTask is not null)
+        {
+            try { await Task.WhenAny(_loopTask, Task.Delay(500)); }
+            catch (OperationCanceledException) { /* that is what we asked for */ }
+            _loopTask = null;
+        }
+
+        _loop?.Dispose();
+
+        // Drop the document listeners before the reference they call through, or
+        // a late pointerdown reaches a disposed object.
+        if (_settings is not null)
+        {
+            // No listeners and no audio graph, so nothing to unhook - but it is a
+            // JS object reference and it is ours to release.
+            try { await _settings.DisposeAsync(); }
+            catch (JSDisconnectedException) { /* the circuit went first */ }
+            _settings = null;
+        }
+
+        if (_js is not null)
+        {
+            // Detaches the window listeners and the ResizeObserver as well as
+            // stopping the audio. Disposing the module reference does not unload
+            // the module, so without this a remount stacked a second set of
+            // listeners on the same window and a looping theme outlived the
+            // component that started it.
+            try { await _js.InvokeVoidAsync("dispose"); }
+            catch (JSDisconnectedException) { /* the circuit went first; nothing to unhook */ }
+            await _js.DisposeAsync();
+        }
+
+        _self?.Dispose();
+    }
+
+}

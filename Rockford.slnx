@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Rockford.Cli/Rockford.Cli.csproj" />
+    <Project Path="src/Rockford.Engine/Rockford.Engine.csproj" />
+    <Project Path="src/Rockford.Formats/Rockford.Formats.csproj" />
+    <Project Path="src/Rockford.Reference/Rockford.Reference.csproj" />
+  </Folder>
+  <Folder Name="/web/">
+    <Project Path="web/Rockford.Web/Rockford.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Rockford.Tests/Rockford.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,189 @@
+{
+  "_about": "What each original cartoon frame shows (an animation with edit_of is drawn once, and its other frames are edits of that frame, so a fixed scene stays fixed), read off the 48 by 48 frames magnified (tools/vipcartoons.py contact), 12 October 2026. The reading is the prompt's pose (docs/ROCKFORD-VIP.md, rule 1). Left and right are the picture's. Counts are exact.",
+  "hunter": {
+    "background": "a dusky violet-purple",
+    "subject": "Rockford the Hunter, a young explorer in a white pith helmet with a red band, brown hair, a red shirt, purple trousers with a dark purple belt pouch, and brown boots",
+    "win": {
+      "story": "he catches a black bat with a butterfly net",
+      "frames": [
+        "he faces front with a pleased look; the pale net bag hangs behind his left shoulder at the left edge, its pole in his right hand angled down to the lower right; ONE black bat at the right, wings fully spread flat, facing front",
+        "the net pole is raised upright in his right hand beside his head, the empty hoop at its top; the bat is still at the right with wings spread",
+        "he has swung the net towards the bat: the hoop is at the upper right with white mesh, and the bat, wings partly folded, is half inside it",
+        "the pole points out to the right, nearly level; the net's bag at the right is hanging and the black bat is INSIDE it, a small dark shape with a red eye seen through the white mesh in the bottom of the bag; the bag is not empty",
+        "the net hangs down in front of his body at the right, mesh drooping, the bat no longer seen outside it; he glances right",
+        "the net is held upright again at the right, pole vertical and the hoop empty and open above it; he looks content"
+      ]
+    },
+    "lose": {
+      "story": "a big green snake with a green and pale-green checked scale pattern coils round his lower body; he looks worried, mouth open",
+      "frames": [
+        "the snake's head is low at his left arm with a red tongue near his chest; the coils pile up on the right of his body",
+        "the snake's head arches high at his left shoulder with a big green loop behind it to the left; his mouth is open",
+        "the snake's head is level with his mouth at the right of his chin, tongue out",
+        "the snake's head is at his right shoulder, one yellow eye showing; his face grimaces",
+        "the snake's head is small at his right shoulder with a yellow eye; his face is sad",
+        "the snake's head is at the upper left beside his shoulder with a yellow eye; the coils are on the right"
+      ]
+    },
+    "time": {
+      "story": "he waits, bored, sitting at the foot of a brown palm tree trunk with green palm fronds at the top right; a grey-blue snake with a red eye is coiled in the upper left; a few pale gold pieces lie on the ground at the bottom",
+      "frames": [
+        "he sits low and slumped, helmet tipped, head resting to the right, looking right",
+        "he leans left against the trunk, helmet tilted, mouth open in a yawn",
+        "he is lower, the helmet pushed up and one hand at its brim",
+        "he sits upright with one hand raised to his forehead, mouth open, eyes wide",
+        "he sits upright with one hand held up beside his face, looking at the viewer",
+        "he is lower again, helmet down, head resting in his hand, looking right"
+      ]
+    }
+  },
+  "cook": {
+    "background": "a flat mid-grey",
+    "subject": "Rockford the Cook, with blond hair, a tall white chef's hat, an orange-red jacket with a white apron, red-orange trousers and green shoes",
+    "win": {
+      "story": "a cheerful cook strikes confident poses",
+      "frames": [
+        "he faces front grinning, both hands on his hips",
+        "he faces front smiling, his right arm raised with the hand near his head, left hand on his hip",
+        "his head is tilted and his left hand is on his head, leaning to the left, smiling",
+        "his head is turned and he winks one eye, his chef's hat lifted off to the upper left in his hand",
+        "he salutes with one hand at his forehead, smiling, other hand on his hip",
+        "he salutes with one hand at his forehead, smiling broadly"
+      ]
+    },
+    "lose": {
+      "story": "a whole round pizza with red, green and yellow toppings is stuck flat over his face and his hat flies off",
+      "frames": [
+        "he stands arms down and still, the pizza over his face, the white hat floating above his head",
+        "arms held out from his sides, the pizza over his face, the hat above and to the left",
+        "he leans back with arms flung wide, the hat flying off to the left, the pizza over his face",
+        "he has fists raised on both sides, toppings dripping down his face, small green sparks above him to the right",
+        "he has fists raised on both sides, toppings dripping, green sparks above him",
+        "he has fists raised on both sides, toppings dripping, a few green sparks above him to the right"
+      ]
+    },
+    "time": {
+      "story": "he waits with a worried look, carrying a stack of food on round pink trays: a burger, a bun and a round pizza",
+      "frames": [
+        "he faces front with a tray at the left holding a burger and a bun, and a round pizza on a pink tray held high at the right",
+        "he faces front, the burger tray lower at the centre, the pizza tray at the right",
+        "he leans left, the trays lower, the bun at the far left, the pizza tray at the right",
+        "he leans, the trays tilting, the burger and the pizza stacked at the centre and right",
+        "he faces front, the trays tilting to the right, the pizza at the right",
+        "he faces front, trays steady, the pizza tray high at the right"
+      ]
+    }
+  },
+  "cowboy": {
+    "background": "a flat dusty blue-grey",
+    "subject": "Rockford the Cowboy, in a grey Stetson with blond hair, a white shirt with a red neckerchief, red trousers with a yellow belt buckle, and brown boots and gloves",
+    "win": {
+      "story": "he spins a brown lasso, the loop circling him at different heights",
+      "frames": [
+        "he stands facing front smiling; a brown rope loop circles low round his legs, his left hand holding the rope at the left",
+        "the loop circles at his feet, both hands low at his sides",
+        "the loop is wide at the left at hip height, one hand moving across his body",
+        "the loop circles round his chest, his body turned slightly, one hand held across him",
+        "the loop circles round his head and hat, both hands low",
+        "the loop circles round his chest at the right with one hand raised at the left"
+      ]
+    },
+    "lose": {
+      "edit_of": 0,
+      "story": "BOOT HILL: a white sign reading BOOT HILL at the lower left, a grey rounded tombstone marked with an R, and a brown mound of earth at the right; a ghost drawn only in thin white outline rises from the grave. The sign, the tombstone and the mound never move or change size from one frame to the next: the sign at the lower left, the tombstone large and upright just right of centre with its top above the middle of the square, the mound at the lower right",
+      "frames": [
+        "sign, tombstone and mound only, no ghost",
+        "a small tangle of white outline just starting to rise over the tombstone",
+        "a larger white outline spirit above the tombstone, to the left of its top",
+        "a white outline ghost with a face floating at the upper left, trailing a wisp to the right",
+        "the white outline ghost with a face a little lower, at the upper left",
+        "a small white outline wisp at the left, trailing away over the mound"
+      ]
+    },
+    "time": {
+      "story": "he waits, nervous, walking round a tall green cactus",
+      "frames": [
+        "he walks towards the viewer, a worried face, a green cactus at the right behind him",
+        "he walks to the right in three-quarter view, the cactus behind him at the left",
+        "he is seen from behind, walking away to the right, the cactus at the left",
+        "he is seen from behind, the cactus in front of his lower body at the centre",
+        "he is side-on facing left, the cactus in front of his legs at the right",
+        "he faces the viewer again, worried, the cactus at the lower right"
+      ]
+    }
+  },
+  "space": {
+    "background": "a deep blue",
+    "subject": "Rockford the Spaceman, in a cream-white spacesuit with a large black visor, a red R on the chest, and lavender gloves",
+    "win": {
+      "story": "he plays with the planet Earth, a blue and green globe with white cloud",
+      "frames": [
+        "he stands facing front holding the Earth low at the left in his left hand",
+        "he stands facing front with the Earth low at the centre at his feet",
+        "he holds the Earth against his belly in both hands",
+        "he holds the Earth up at the upper right in one hand",
+        "he is turned to face right, the Earth at the upper right, reaching up to it",
+        "he faces front with the Earth at his right shoulder"
+      ]
+    },
+    "lose": {
+      "story": "he is blown apart in space: the suit tumbles and breaks up inside widening rings of orange and red dots",
+      "frames": [
+        "the whole suit tumbles, tilted, limbs out, inside rings of orange and red dots",
+        "the suit tilts further, arms out, rings widening",
+        "the suit is horizontal, helmet separating at the left from the body, arms and legs straight out",
+        "the pieces spin small at the centre of bright concentric rings",
+        "a few small pieces drift at the centre of the rings",
+        "only a few tiny pieces remain at the centre of the rings"
+      ]
+    },
+    "time": {
+      "story": "he waits with a pickaxe and a big blue speckled planet; it cracks and an orange creature hatches and spits fire",
+      "frames": [
+        "he stands at the right in profile facing left, holding the blue planet at the lower left, a pickaxe raised high above it",
+        "the pickaxe is angled down, about to strike the planet",
+        "the pickaxe strikes and black cracks appear across the planet",
+        "the planet is cracked all over, the pickaxe gone, a small orange blob on top of it",
+        "an orange creature with a hooked neck and an eye rises from the cracked planet",
+        "the orange creature spits a flame, a red and black burst, towards the astronaut's helmet"
+      ]
+    }
+  },
+  "body": {
+    "background": "a dark maroon",
+    "subject": "Rockford the Doctor, in a white coat and trousers with a red belt, a white head bandage like a cap, brown hair and green eyes",
+    "win": {
+      "story": "he juggles medical instruments that circle him",
+      "frames": [
+        "he holds a blue medicine bottle up at the left in one hand; a stethoscope hangs round his neck; a round flask in a bubble at the upper right",
+        "his left hand is raised waving; a blue pill in a bubble at the top; a round flask in a bubble at the right; the stethoscope looped at the left",
+        "the stethoscope looped at the left, a blue pill in a bubble at the upper right, a round flask in a bubble at the lower right",
+        "scissors open across his head, a blue pill in a bubble at the right, a round flask in a bubble at the lower left, one hand waving",
+        "scissors at the upper right, a round flask in a bubble at the left, a blue pill in a bubble at the right",
+        "a round flask in a bubble at the upper left, a blue medicine bottle in his hand at the left, the stethoscope looped at the right"
+      ]
+    },
+    "lose": {
+      "story": "he is electrocuted: his frames alternate between the doctor and a green X-ray skeleton",
+      "frames": [
+        "the doctor, arms raised on both sides with hands up, frightened",
+        "the same pose as a bright green skeleton X-ray with a grey skull and a green outline, arms out",
+        "the doctor with arms out low at his sides",
+        "the green skeleton X-ray, arms down at his sides, legs together",
+        "the doctor with arms held out wide, palms forward",
+        "the green skeleton X-ray with arms stretched wide"
+      ]
+    },
+    "time": {
+      "story": "he waits, holding a large syringe, turning round",
+      "frames": [
+        "he faces the viewer holding a large grey syringe at the right, bent forward",
+        "he faces the viewer, hands at his hips, no syringe in sight",
+        "he is turned sideways, the syringe pointing down to the lower left at his side",
+        "he is turned away, the syringe at the left in front of his body, a small brown bag at the lower right",
+        "he is seen from behind, a grey object on his back",
+        "he faces the viewer again, the syringe at the right in his hand"
+      ]
+    }
+  }
+}

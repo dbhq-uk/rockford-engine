@@ -1,0 +1,1026 @@
+/*
+    The wrapper around a 1988 game.
+
+    Every colour here is lifted from the game's own files rather than invented:
+    the plum is the cave backdrop that fills most of a HUNTER screen, the gold is
+    the diamonds, the red is Rockford's shirt, the lilac is the brick walls. The
+    job of this chrome is to be the dark room the screen sits in, so it stays
+    quiet and lets the pixels lead.
+*/
+
+:root {
+    /* Straight from the sprite sheets. */
+    --cave: #443355;
+    --gold: #ffcc00;
+    --red: #ff0033;
+    --brick: #8844ff;
+
+    /* The room, built down from the cave colour so the frame and the screen
+       belong to each other. */
+    --ground: #141019;
+    --surface: #1e1828;
+    --raised: #2a2138;
+    --edge: #3a2f4d;
+
+    --ink: #e7e0d6;
+    --dim: #9d92ab;
+
+    --pad: clamp(0.75rem, 2vw, 1.5rem);
+    --radius: 6px;
+
+    color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--ground);
+    color: var(--ink);
+    font: 400 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* The browser's own surfaces belong to the design too. */
+::selection { background: var(--gold); color: #1a1206; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--ground); }
+::-webkit-scrollbar-thumb { background: var(--edge); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #4b3d63; }
+* { scrollbar-color: var(--edge) var(--ground); scrollbar-width: thin; }
+
+/* Read out but not drawn. The standard clip-rect technique rather than
+   display:none or visibility:hidden, both of which take an element out of the
+   accessibility tree as well as off the screen - which would make a live region
+   silent, and silent is the one thing it must not be. */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 3px;
+    border-radius: 3px;
+}
+
+/* ---------------------------------------------------------------- boot ---- */
+
+.boot {
+    position: fixed;
+    inset: 0;
+    /* Over the game's own shell. The panel is rendered twice: by index.html for
+       the runtime download, and by Home.razor for the files after it, and the
+       second one sits on top of a canvas that is already being set up. */
+    z-index: 10;
+    display: grid;
+    place-items: center;
+    background: var(--ground);
+    transition: opacity 300ms ease-out;
+}
+
+/* Out, rather than cut. The title is already painted underneath by the time
+   this fades, so what the fade reveals is the picture and never a black frame. */
+.boot--leaving {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* One big gem, sunk into the ground as a watermark.
+   This used to be the game's own title screen, blurred and vignetted behind the
+   panel. It was the wrong picture for the moment: the loading screen is the
+   first thing a visitor sees, and showing the title art there spends the title
+   screen's one reveal before the game has started, then shows it again properly
+   two seconds later. The gem is the site's own mark, it needs no raster, and it
+   says "a game about gems" without spoiling anything.
+
+   It breathes rather than sitting still (Dan, 16 Sep 2026). Opacity only, no
+   movement or scaling: a slow connection should not look like a frozen page,
+   and a mark that drifts or spins is a spinner pretending to be a logo. */
+.boot__art {
+    position: absolute;
+    top: 46%;
+    left: 50%;
+    translate: -50% -50%;
+    width: min(300px, 46vw);
+    aspect-ratio: 32 / 32;
+    background: url("../icon.svg") center / contain no-repeat;
+    animation: boot-breathe 3.6s ease-in-out infinite;
+}
+
+@keyframes boot-breathe {
+    0%, 100% { opacity: 0.09; }
+    50%      { opacity: 0.18; }
+}
+
+/* The panel sits low, clear of the mark rather than across it: a progress bar
+   drawn over the middle of the gem reads as a strike-through. */
+.boot__panel {
+    position: absolute;
+    left: 50%;
+    bottom: 12%;
+    translate: -50% 0;
+    display: grid;
+    justify-items: center;
+    gap: 0.9rem;
+    width: min(22rem, 70vw);
+}
+
+.boot__bar {
+    width: 100%;
+    height: 4px;
+    background: var(--raised);
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.boot__bar span {
+    display: block;
+    height: 100%;
+    width: 100%;
+    background: var(--gold);
+    border-radius: 99px;
+    /* Slid rather than resized. The bar is full width and pushed left by the
+       remainder, which keeps this off the layout path entirely.
+
+       ONE BAR FOR TWO WAITS. Blazor's runtime download fills the first 40 per
+       cent from its own --blazor-load-percentage; then game.js's load phase
+       sets --boot-progress on the panel and carries it from 40 to 100 as the
+       pictures and music arrive. Two bars that each filled to the end would
+       read as the game finishing loading and then starting again. */
+    transform: translateX(calc(var(--boot-progress, calc(var(--blazor-load-percentage, 0%) * 0.4)) - 100%));
+    transition: transform 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.boot__status {
+    margin: 0;
+    color: var(--dim);
+    font-size: 0.8125rem;
+    letter-spacing: 0.06em;
+}
+
+/* The number is shown for the second phase only, written by game.js. Blazor's
+   own percentage text counts its download from 0 to 100 while the bar above it
+   only reaches 40, and a number that disagrees with the bar beside it is worse
+   than no number. */
+.boot__percent {
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------- shell ---- */
+
+.shell {
+    height: 100dvh;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    /* The bars belong to the picture, so they sit close to it - about a third of
+       what they used to. The old `gap: var(--pad)` matched the outer padding,
+       which read as three separate bands rather than one screen with a label
+       above and controls below. The outer padding stays where it was: it is the
+       frame, and it is doing a different job from the gap.
+       Less gap is also more canvas. The middle row takes whatever these two
+       leave, so every pixel saved here goes to the cave. */
+    row-gap: clamp(0.35rem, 0.8vw, 0.6rem);
+    padding: clamp(0.5rem, 1.2vw, 0.9rem) var(--pad);
+    overflow: hidden;
+    /* One authored moment: the room comes up as the game takes over from boot. */
+    animation: rise 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .shell { animation: none; }
+    .boot__bar span { transition: none; }
+    /* Held at the midpoint rather than at either end of the breath, so the mark
+       is the weight it was designed to be rather than its faintest frame. */
+    .boot__art { animation: none; opacity: 0.13; }
+}
+
+/* The two bars sit on exactly the same edges as the canvas between them, so
+   the wordmark and the HUD line up with the top corners of the picture and the
+   controls line up with the bottom ones.
+   --stage is set by fit() in game.js from the canvas's own drawn width, because
+   nothing else knows it: the canvas scales to the window and the bars cannot
+   work that out from CSS. The 68rem fallback is what they used to be capped at,
+   and applies only in the instant before the first fit(). */
+.bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    width: min(100%, var(--stage, 68rem));
+    margin-inline: auto;
+    flex-wrap: wrap;
+}
+
+.mark {
+    height: 14px;
+    width: auto;
+    image-rendering: pixelated;
+    opacity: 0.9;
+}
+
+/* ----------------------------------------------------------------- hud ---- */
+
+/* The HUD has a HIERARCHY, which is #35.
+   
+   Four fields at one weight meant the eye had to read all four to find the two
+   that decide what to do next, and it had to do that while a boulder was
+   falling. The quota and the clock are primary; the world, the score and the
+   spare lives are secondary; the exit is its own thing because the CHANGE is
+   the point. */
+.hud {
+    display: flex;
+    align-items: center;
+    gap: clamp(0.75rem, 2.5vw, 2rem);
+    font-size: 0.8125rem;
+    letter-spacing: 0.04em;
+    color: var(--dim);
+    flex-wrap: wrap;
+}
+
+.hud-primary,
+.hud-secondary {
+    display: flex;
+    align-items: center;
+    gap: clamp(0.75rem, 2vw, 1.5rem);
+}
+
+.hud .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    line-height: 1.1;
+}
+
+.hud .label {
+    font-size: 0.625rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--dim);
+    opacity: 0.8;
+}
+
+.hud .value {
+    display: flex;
+    align-items: baseline;
+    gap: 0.25rem;
+}
+
+.hud b {
+    color: var(--ink);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Primary: the two numbers a player acts on. */
+.hud-primary .value { font-size: 1.375rem; }
+.hud-primary b { font-weight: 700; }
+
+.hud .quota .of { color: var(--dim); opacity: 0.6; }
+.hud .quota .need { color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* A picture of the two numbers beside it, never a third number. It is computed
+   from them, so it cannot disagree with them. */
+.hud .bar {
+    display: block;
+    width: 100%;
+    min-width: 4rem;
+    height: 2px;
+    margin-top: 0.2rem;
+    background: color-mix(in srgb, var(--dim) 30%, transparent);
+    border-radius: 1px;
+    overflow: hidden;
+}
+
+.hud .fill {
+    display: block;
+    height: 100%;
+    background: var(--ink);
+    /* Decorates the change; the numbers above are already correct. */
+    transition: width 180ms ease-out;
+}
+
+.hud .quota.met .fill { background: var(--gold); }
+.hud .quota.met b { color: var(--gold); }
+
+/* Secondary: true, needed, and not urgent. */
+.hud-secondary .value { font-size: 0.9375rem; }
+
+/* Spare lives as a count AND as pips, so the number has a shape. */
+.hud .pips { display: inline-flex; gap: 0.2rem; align-items: center; }
+
+.hud .pip {
+    width: 0.3rem;
+    height: 0.3rem;
+    border-radius: 50%;
+    background: var(--ink);
+    opacity: 0.7;
+}
+
+/* The last life. Worth saying loudly - it is the only number on the HUD whose
+   value changes what the player should do next. */
+.hud .low .label,
+.hud .low b { color: var(--red); }
+
+.hud .lives.low .label { opacity: 1; font-weight: 600; }
+
+/* The exit. Shut for most of a cave and then, once, open. */
+.hud-exit {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.hud-exit .dot {
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--dim) 50%, transparent);
+    transition: background 200ms ease-out, box-shadow 200ms ease-out;
+}
+
+.hud-exit.lit { color: var(--gold); }
+
+.hud-exit.lit .dot {
+    background: var(--gold);
+    box-shadow: 0 0 0.5rem var(--gold);
+}
+
+.hud .msg { color: var(--red); font-weight: 600; }
+
+/* One column of the two groups on a narrow screen, rather than five fields
+   wrapping into an unreadable stack. */
+@media (max-width: 30rem) {
+    .hud { gap: 0.6rem; }
+    .hud-primary .value { font-size: 1.125rem; }
+    .hud .bar { min-width: 3rem; }
+}
+
+/* -------------------------------------------------------------- screen ---- */
+
+/* The canvas takes whatever the header and footer leave. minmax(0, 1fr) above is
+   what lets this row shrink rather than being sized by its content. */
+.screen {
+    /* Positioned so the interlude overlay can sit on the cave rather than on the
+       viewport - without this, inset: 0 escapes to the page. */
+    position: relative;
+    display: grid;
+    place-items: center;
+    min-height: 0;
+    min-width: 0;
+}
+
+/* The canvas is a lit display in a dark room. The glow is the game's own brick
+   lilac, so the frame and the picture agree. */
+canvas {
+    display: block;
+    background: var(--cave);
+    border-radius: var(--radius);
+
+    /* The default only, for the moment before fit() has measured anything.
+       fit() in game.js then sets this inline from the same test it uses for the
+       context's own smoothing, because the two govern different halves of the
+       same scale and disagreeing is how VIP's redrawn art was being minified by
+       dropping pixels. Do not make this rule authoritative again. */
+    image-rendering: pixelated;
+
+    box-shadow:
+        0 0 0 1px var(--edge),
+        0 18px 48px -12px rgba(0, 0, 0, 0.85),
+        0 0 90px -30px var(--brick);
+}
+
+/* The original's cartoon, over the cave and near the player. Placed and sized in
+   pixels by game.js. It is a canvas, so the plain canvas rule above would give it
+   the lit display's glow and rounded corners; none of that belongs on a window. */
+canvas.cartoon {
+    position: absolute;
+    box-shadow: none;
+    border-radius: 0;
+    pointer-events: none;
+}
+
+/* -------------------------------------------------------------- footer ---- */
+
+.hint {
+    color: var(--dim);
+    font-size: 0.8125rem;
+    letter-spacing: 0.02em;
+}
+
+.hint kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    margin-inline: 1px;
+    background: var(--raised);
+    border: 1px solid var(--edge);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.75rem;
+    line-height: 1.4;
+}
+
+.controls {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+button {
+    font: inherit;
+    font-size: 0.8125rem;
+    /* Stated rather than inherited, because the icon button derives its square
+       from this number. Leaving it to the cascade let the two drift apart. */
+    line-height: 1.35;
+    letter-spacing: 0.02em;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--edge);
+    border-radius: var(--radius);
+    padding: 0.4rem 0.85rem;
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+button:hover:not(:disabled) {
+    background: var(--raised);
+    border-color: #4e3f68;
+}
+
+button:active:not(:disabled) { background: var(--surface); }
+
+button[data-live="true"] {
+    color: var(--gold);
+    border-color: #6a5320;
+}
+
+button:disabled {
+    opacity: 0.32;
+    cursor: default;
+}
+
+/* --------------------------------------------------------------- error ---- */
+
+#blazor-error-ui {
+    position: fixed;
+    inset: auto 0 0 0;
+    /* Above the loading panel. A failure during the load phase happens with the
+       panel still up, and an error bar underneath it reports nothing. */
+    z-index: 20;
+    display: none;
+    align-items: center;
+    gap: 1rem;
+    /* Wraps, because the detail below goes on its own line and the controls
+       should not be pushed off the side to make room for it. */
+    flex-wrap: wrap;
+    padding: 0.75rem var(--pad);
+    background: var(--red);
+    color: #fff;
+    font-size: 0.875rem;
+}
+
+/* What actually broke. Selectable, so it can be copied into a bug report, and
+   capped in height so a long stack does not take the screen. */
+#error-detail {
+    flex-basis: 100%;
+    margin: 0.25rem 0 0;
+    max-height: 7.5rem;
+    overflow: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    user-select: text;
+    opacity: 0.92;
+}
+#error-detail[hidden] { display: none; }
+
+#blazor-error-ui a, #blazor-error-ui .dismiss {
+    color: #fff;
+    background: rgba(0, 0, 0, 0.25);
+    border: 0;
+    border-radius: 4px;
+    padding: 0.25rem 0.6rem;
+    font: inherit;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+@media (max-width: 640px) {
+    .bar { justify-content: center; }
+    .hint { display: none; }
+    .controls { justify-content: center; width: 100%; }
+}
+
+/* --------------------------------------------------------- touch pad ---- */
+/*
+ * The on-screen controls, and until these the game could not be STARTED on a
+ * phone: a tap opened the audio and nothing else, so "press Enter to begin" was
+ * the end of the road.
+ *
+ * Shown on a coarse pointer, hidden on a fine one - not on screen width. A
+ * tablet with a keyboard is narrow and does not want them; a laptop with a
+ * touchscreen is wide and might. `pointer` asks the question that is actually
+ * being asked, where `max-width` asks a different one and is right by accident.
+ */
+.pad { display: none; }
+
+.hint--touch { display: none; }
+
+/* any-pointer, not pointer.
+ *
+ * `pointer` describes the PRIMARY input, so a touchscreen laptop - fine primary,
+ * touch available - got no pad at all, and a tablet with a keyboard attached
+ * lost its keyboard hint. `any-pointer: coarse` asks whether the device can be
+ * touched, which is the question. The cost is a desktop with a graphics tablet
+ * showing a pad it does not need, which is a far smaller wrong than a
+ * touchscreen device with no controls. Astra, 19 September 2026. */
+@media (any-pointer: coarse) {
+    .pad {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--pad);
+        padding: 0 var(--pad);
+        /* Nothing here scrolls, pinches or double-tap-zooms. A game pad that
+           pans the page instead of moving the player is not a pad. */
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+
+    /* The picture must not pan or zoom under a thumb either. */
+    canvas { touch-action: none; }
+
+    /* The touch hint appears wherever touch does. The keyboard hint is only
+       hidden where there is no fine pointer to go with it - a tablet with a
+       keyboard attached should keep both, because both are true. */
+    .hint--touch { display: block; }
+
+    .pad__stick,
+    .pad__fire {
+        /* Big. A thumb is about 9mm and these are held one-handed at speed, so
+           they are sized off the viewport rather than in pixels - a small phone
+           gets a proportionally large pad, which is what it needs. */
+        width: clamp(7rem, 30vw, 10rem);
+        height: clamp(7rem, 30vw, 10rem);
+        border-radius: 50%;
+        background: color-mix(in srgb, var(--ink) 8%, transparent);
+        border: 1px solid var(--edge);
+        color: var(--dim);
+        display: grid;
+        place-items: center;
+        position: relative;
+        touch-action: none;
+    }
+
+    .pad__fire {
+        font-size: 0.8125rem;
+        letter-spacing: 0.1em;
+        /* The one control that does something rather than aiming it. */
+        background: color-mix(in srgb, var(--red) 18%, transparent);
+        border-color: color-mix(in srgb, var(--red) 45%, transparent);
+        color: color-mix(in srgb, var(--red) 85%, var(--ink));
+    }
+
+    /* Pressed state on the element itself, so a finger gets an answer even
+       before the next simulation step paints. */
+    .pad__stick:active,
+    .pad__fire:active { background: color-mix(in srgb, var(--ink) 18%, transparent); }
+
+    /* The arrows are a legend, not four buttons. Where the thumb is decides the
+       direction - see directionFrom in game.js - so these say which way is which
+       and take no events of their own. */
+    .pad__arrow {
+        position: absolute;
+        font-size: 1.1rem;
+        line-height: 1;
+        opacity: 0.55;
+        pointer-events: none;
+    }
+
+    .pad__arrow--up { top: 0.6rem; }
+    .pad__arrow--down { bottom: 0.6rem; }
+    .pad__arrow--left { left: 0.7rem; }
+    .pad__arrow--right { right: 0.7rem; }
+
+    /* The pad is a row of its own, so the picture keeps the space it had. */
+    .shell { grid-template-rows: auto minmax(0, 1fr) auto auto; }
+}
+
+/* Landscape on a phone is short, and the pad and the picture are fighting for
+   the same height. The pad shrinks; the picture is the point. */
+@media (any-pointer: coarse) and (pointer: coarse) {
+    /* No fine pointer at all, so there is no keyboard to describe. */
+    .hint { display: none; }
+}
+
+@media (any-pointer: coarse) and (max-height: 480px) {
+    .pad__stick,
+    .pad__fire {
+        width: clamp(4.5rem, 18vh, 7rem);
+        height: clamp(4.5rem, 18vh, 7rem);
+    }
+}
+
+/* -------------------------------------------------------------- worlds ---- */
+/*
+ * The select screen's five choices, as real buttons over the picture.
+ *
+ * The portraits, the wordmark and the instructions are all drawn into menu.png
+ * by tools/vipart.py. This is a layer of hit targets and focus rings over the
+ * boxes those portraits were drawn into, positioned from the SAME five
+ * fractions, read out of the file vipart.py writes beside the art.
+ *
+ * The box it sits in is the canvas's own displayed size, published by fit() -
+ * the only thing that knows it, because it is the one that decided it.
+ */
+.worlds {
+    position: absolute;
+    width: var(--shown-w, 100%);
+    height: var(--shown-h, 100%);
+    place-self: center;
+    pointer-events: none;
+}
+
+.world {
+    position: absolute;
+    left: var(--menu-x);
+    top: var(--menu-y);
+    width: var(--menu-w);
+    height: var(--menu-h);
+
+    padding: 0;
+    border: 0;
+    border-radius: calc(var(--radius) / 2);
+    background: transparent;
+    color: transparent;
+    cursor: pointer;
+    pointer-events: auto;
+
+    /* Outside the box, so the ring never covers the portrait it is pointing at. */
+    box-shadow: 0 0 0 0 transparent;
+    transition: box-shadow 140ms ease-out;
+}
+
+.world.on {
+    box-shadow: 0 0 0 3px var(--gold), 0 0 1.25rem -0.25rem var(--gold);
+}
+
+/* A focus ring that is not the selection ring, because they are two different
+   things: the keyboard can be ON a world without it being the chosen one. */
+.world:focus-visible {
+    outline: 2px dashed var(--ink);
+    outline-offset: 4px;
+}
+
+/* The name is in the picture already. This is for a screen reader, and for the
+   moment a pointer hovers - a portrait is not a label. */
+.world__name {
+    position: absolute;
+    inset: auto 0 -1.5rem 0;
+    font-size: 0.6875rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    text-align: center;
+    color: var(--ink);
+    opacity: 0;
+    transition: opacity 140ms ease-out;
+}
+
+.world:hover .world__name,
+.world:focus-visible .world__name,
+.world.on .world__name { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+    .world, .world__name { transition: none; }
+}
+
+/* ------------------------------------------------------------- outcome ---- */
+/*
+ * "caught", "out of time", "cave clear" and "game over", over the cave they happened in.
+ *
+ * These used to be a small red word at the end of the status row, in the same
+ * weight as the score, for something that had just ended the cave.
+ *
+ * EVERY DURATION HERE FITS INSIDE A HOLD THE ENGINE ALREADY TAKES.
+ * GameHost.CaveHold is 12 steps at 10 Hz - 1.2 seconds - and GameOverHold is
+ * 30, so 3 seconds. The wipe and the settle below total 0.9s and 1.6s
+ * respectively. An animation that needed longer would be a new pause, and the
+ * engine's pacing is not this layer's to change.
+ */
+.outcome {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    gap: 0.35rem;
+    text-align: center;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--bg) 55%, transparent);
+    animation: outcome-in 220ms ease-out both;
+}
+
+.outcome__word {
+    margin: 0;
+    font-size: clamp(1.75rem, 7vw, 3.25rem);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: lowercase;
+    color: var(--ink);
+    animation: outcome-word 680ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.outcome__note {
+    margin: 0;
+    font-size: 0.75rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--dim);
+    animation: outcome-in 420ms 160ms ease-out both;
+}
+
+/* A life gone and the game ending are different events and should not look the
+   same. Losing one is red and brief; the end is quieter and longer, because it
+   is the thing worth reading. */
+.outcome--caught .outcome__word,
+.outcome--time .outcome__word { color: var(--red); }
+
+/* A cave completed is good news, not a loss. */
+.outcome--clear .outcome__word { color: var(--gold); }
+
+.outcome--over {
+    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    animation: outcome-in 420ms ease-out both;
+}
+
+.outcome--over .outcome__word {
+    color: var(--gold);
+    animation: outcome-word 1200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes outcome-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes outcome-word {
+    from { opacity: 0; transform: scale(1.35); letter-spacing: 0.3em; }
+    to { opacity: 1; transform: scale(1); letter-spacing: 0.06em; }
+}
+
+/* Someone who has asked not to be moved still needs to be told. The words
+   arrive, they just do not travel to get there. */
+@media (prefers-reduced-motion: reduce) {
+    .outcome,
+    .outcome__word,
+    .outcome__note { animation: outcome-in 120ms ease-out both; }
+}
+
+/* ----------------------------------------------------------- interlude ---- */
+/*
+ * The world-complete screen. It sits over the finished cave rather than
+ * replacing it: the cave you just cleared is the thing being celebrated, so
+ * dimming it and writing over it says more than a blank panel would.
+ */
+.interlude {
+    position: absolute;
+    inset: 0;
+    /* It sits ON the canvas, and the canvas is what a tap has to reach: the
+       screen says "press anything" and on a phone that means the picture. The
+       panel holds no controls - a kicker, a heading and two numbers - so letting
+       presses through costs nothing and is the difference between dismissable
+       and not. Astra, 19 September 2026. */
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.9rem;
+    padding: var(--pad);
+    text-align: center;
+    background: color-mix(in srgb, var(--ground) 82%, transparent);
+    animation: interlude-in 0.4s ease-out both;
+}
+
+@keyframes interlude-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* A player who has asked for less motion still gets the screen, just not the
+   fade - the information is the point, the animation is decoration. */
+@media (prefers-reduced-motion: reduce) {
+    .interlude { animation: none; }
+}
+
+.interlude__kicker {
+    margin: 0;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 0.8rem;
+}
+
+.interlude__title {
+    margin: 0;
+    color: var(--gold);
+    font-size: clamp(1.6rem, 5vw, 2.6rem);
+    text-transform: lowercase;
+}
+
+.interlude__stats {
+    display: flex;
+    gap: clamp(1.2rem, 5vw, 3rem);
+    margin: 0.4rem 0 0;
+}
+
+.interlude__stats div { display: flex; flex-direction: column; gap: 0.2rem; }
+.interlude__stats dt {
+    color: var(--dim);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+.interlude__stats dd { margin: 0; color: var(--ink); font-size: 1.3rem; }
+
+.interlude__prompt {
+    margin: 0.6rem 0 0;
+    color: var(--dim);
+    font-size: 0.9rem;
+}
+
+/* The paused panel is the exception to the rule above, and has to be.
+   `.interlude` lets presses through because the world-complete screen holds no
+   controls and says "press anything". This one holds the only control that can
+   dismiss it, so a press has to reach the button rather than the canvas behind
+   it - and reaching the canvas is worse than useless here, because the canvas
+   is what resumes nothing. */
+.interlude--paused { pointer-events: auto; }
+
+/* And it is opaque enough to read as stopped rather than as a caption over a
+   live picture, because the picture underneath is frozen mid-cave and looks
+   exactly like a game still running. */
+.interlude--paused { background: color-mix(in srgb, var(--ground) 86%, transparent); }
+
+.resume {
+    font: inherit;
+    color: var(--ink);
+    background: var(--raised);
+    border: 1px solid var(--edge);
+    border-radius: var(--radius);
+    padding: 0.45rem 1.1rem;
+    cursor: pointer;
+}
+
+.resume:hover { border-color: var(--ink); }
+
+/* ------------------------------------------------------ footer controls ---- */
+/*
+ * The footer was eight buttons of equal weight. It is now a cave stepper and two
+ * menus, which is four controls in a debug build and two in a release one.
+ */
+
+/* The stepper reads as one control rather than three, so the position is inside
+   the same border as the arrows that change it. */
+.stepper {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.stepper__pos {
+    color: var(--dim);
+    font-size: 0.85rem;
+    /* Tabular figures, or the row twitches sideways every time the cave number
+       changes width. */
+    font-variant-numeric: tabular-nums;
+    min-width: 9ch;
+    text-align: center;
+}
+
+.menu { position: relative; display: inline-block; }
+.menu > button::after { content: " \25BE"; opacity: 0.7; }
+
+.panel {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    right: 0;
+    z-index: 5;
+    min-width: 210px;
+    padding: 4px;
+    background: var(--raised);
+    border: 1px solid var(--edge);
+    border-radius: var(--radius);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 50%);
+}
+
+/* Rows, not buttons in a row: full width, label left, tick right. */
+.panel button {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    width: 100%;
+    background: none;
+    border: 0;
+    text-align: left;
+}
+
+.panel hr { margin: 4px 2px; border: 0; border-top: 1px solid var(--edge); }
+
+/* A level, rather than a toggle. On and off is not a mix: the footstep fires up
+   to ten times a second and the theme runs under everything, so "turn the music
+   down a bit" is the thing most people want and a glyph could not say it. */
+.panel .level {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 4px 6px;
+    font-size: 0.8125rem;
+    color: var(--dim);
+}
+
+.panel .level input[type="range"] {
+    flex: 1;
+    min-width: 6rem;
+    accent-color: var(--gold);
+}
+
+.panel .level output {
+    min-width: 3ch;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+}
+
+/* The tick keeps its width whether or not it is showing, so rows do not shift
+   as choices change. */
+.panel .tick { color: var(--gold); min-width: 1ch; }
+
+/* What a menu item costs, sitting where the tick sits on the toggles. Dimmer
+   than the label: it is the consequence, not the action. */
+.panel .cost {
+    color: var(--dim);
+    font-size: 0.8125rem;
+    white-space: nowrap;
+}
+
+/* An icon button. Square rather than text-shaped, and it drops the dropdown
+   caret the text menus carry - a caret beside a glyph is two hints for one
+   affordance. */
+.iconbtn {
+    display: inline-grid;
+    place-items: center;
+    /* Square, and the same height as the text buttons beside it. That height is
+       the text button's own: padding 0.4rem top and bottom, plus a 1.35 line on
+       0.8125rem type, plus two 1px borders. Deriving it rather than writing
+       2.25rem means the row stays level if the type changes, which is exactly
+       how it drifted out of line before - the text button was 32.9px and this
+       was a hard 2.25rem, 33.75px. */
+    --iconbtn-size: calc(0.8rem + (0.8125rem * 1.35) + 2px);
+    width: var(--iconbtn-size);
+    height: var(--iconbtn-size);
+    padding: 0;
+    line-height: 0;
+}
+
+/* Has to out-specify `.menu > button::after`, which is (0,1,2) against this
+   selector's (0,1,1) - written flat, the caret rule wins and the glyph gets a
+   dropdown arrow stacked underneath it. */
+.menu > .iconbtn::after { content: none; }
+
+/* Struck through when sound is off. The slash is drawn in the warning colour
+   rather than the ink, so the state is legible at a glance and not only on
+   close inspection. */
+/* Muted: faded, and struck through.
+ *
+ * The slash used to be drawn in the warning red. Muting is a choice the player
+ * made, not a fault, and red says something is wrong. It now takes the same
+ * dimmed ink as the glyph it crosses, so the pair reads as "off" rather than
+ * "broken", and the fading does the work of saying which state you are in. */
+.iconbtn--off { color: var(--dim); opacity: 0.55; }
+.iconbtn__slash { stroke: currentColor; }
+
+/* Hover has to lift a muted button too, or the only control that looks
+   unresponsive is the one you are trying to click. */
+.iconbtn--off:hover:not(:disabled) { opacity: 0.8; }

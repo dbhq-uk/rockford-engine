@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>rockford</title>
+    <meta name="description" content="Rockford, the 1988 MS-DOS game, reverse engineered and reimplemented in C#." />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#141019" />
+    <base href="/" />
+    <link rel="preload" id="webassembly" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="icon" href="favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="icon-16.png" />
+    <link rel="apple-touch-icon" href="icon-180.png" />
+    <link href="Rockford.Web.styles.css" rel="stylesheet" />
+    <script type="importmap"></script>
+</head>
+
+<body>
+    <div id="app">
+        <!--
+            The wait is a ten megabyte runtime download, so it gets one big gem
+            sunk into the background rather than a spinner. The bar is driven by
+            Blazor's real --blazor-load-percentage, not an animation pretending
+            to be progress.
+
+            The mark is decoration and carries no aria-label: the bar and the
+            status line already say what is happening, and a screen reader
+            announcing "diamond" during a download helps nobody.
+        -->
+        <div class="boot">
+            <div class="boot__art" aria-hidden="true"></div>
+            <div class="boot__panel">
+                <div class="boot__bar"><span></span></div>
+                <p class="boot__status">Loading the cave</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui">
+        <span>Something broke.</span>
+        <a href="." class="reload">Reload</a>
+        <button class="dismiss" type="button" aria-label="Dismiss">Dismiss</button>
+        <!-- Populated by the handler below. Empty and hidden until something
+             actually fails, so the bar stays one line in the normal case. -->
+        <pre id="error-detail" hidden></pre>
+    </div>
+
+    <script>
+        // "Something broke." is true and useless. Blazor shows this bar for any
+        // unhandled exception and puts the detail in the console, which nobody
+        // playing a game is looking at - so a report arrives as "it broke" and
+        // there is nothing to work from.
+        //
+        // This copies whatever the browser saw into the bar itself. The bar is
+        // already the thing on screen at that moment, so the detail is in front
+        // of the person who can tell you about it.
+        (function () {
+            var box = document.getElementById('error-detail');
+            var seen = false;
+
+            function report(what, where) {
+                if (seen || !box) return;      // the first failure is the useful one
+                seen = true;
+                box.textContent = (where ? where + '\n' : '') + what;
+                box.hidden = false;
+            }
+
+            window.addEventListener('error', function (e) {
+                report(e.message || String(e.error),
+                       e.filename ? e.filename.split('/').pop() + ':' + e.lineno : '');
+            });
+
+            window.addEventListener('unhandledrejection', function (e) {
+                var r = e.reason;
+                report(r && r.stack ? String(r.stack).split('\n').slice(0, 4).join('\n')
+                                    : String(r));
+            });
+
+            // The two handlers above catch JavaScript. They do NOT catch the
+            // case this bar actually exists for: an unhandled .NET exception,
+            // which Blazor reports by writing to console.error and then showing
+            // the bar. Without this the bar would keep saying "Something broke."
+            // for precisely the failures it was put there to report.
+            var realError = console.error.bind(console);
+            console.error = function () {
+                var text = Array.prototype.map.call(arguments, function (a) {
+                    if (a instanceof Error) return a.stack || a.message;
+                    if (typeof a === 'string') return a;
+                    try { return JSON.stringify(a); } catch (_) { return String(a); }
+                }).join(' ');
+                report(text.split('\n').slice(0, 6).join('\n'));
+                realError.apply(console, arguments);
+            };
+        })();
+    </script>
+    <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
+</body>
+
+</html>

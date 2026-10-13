@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Rockford, taken apart">
+  <!--
+    The site's only drawn asset, and it does both jobs: this exact file is the
+    favicon and the masthead logo, scaled up. One drawing, one source of truth.
+
+    A gem, because a gem is what every cave in this game is about, and because
+    it needs no character likeness to say so.
+
+    The direction came from a generated draft; the shape here is authored rather
+    than traced, so it is vector at every size - crisp at 16 pixels in a browser
+    tab and crisp at 64 in the masthead, from one file of under a kilobyte. A
+    raster favicon would also have been the only bitmap on the public side of
+    this site, which the test suite forbids for good reasons.
+
+    Two tones and no gradient: light on the left, dark on the right, which is
+    how a 16 colour machine drew depth and how this reads at 16 pixels. Both are
+    real EGA colours - bright cyan and cyan, the game's own palette rather than
+    an approximation of it. Literal values because an <img> is an isolated
+    document that cannot see the page's custom properties.
+
+    The hairline is the page ground: invisible on this site, and just enough
+    separation to hold the shape together in a light browser tab.
+  -->
+  <g stroke="#0B0B0F" stroke-width="0.75" stroke-linejoin="round">
+    <!-- crown, left and table: the lit side -->
+    <path d="M2 11 L9 4 L11.5 11 Z" fill="#55FFFF"/>
+    <path d="M9 4 H23 L20.5 11 H11.5 Z" fill="#55FFFF"/>
+    <!-- crown, right: turned away -->
+    <path d="M23 4 L30 11 L20.5 11 Z" fill="#00AAAA"/>
+    <!-- pavilion: left lit, centre and right in shade -->
+    <path d="M2 11 L11.5 11 L16 29 Z" fill="#55FFFF"/>
+    <path d="M11.5 11 H20.5 L16 29 Z" fill="#00AAAA"/>
+    <path d="M20.5 11 L30 11 L16 29 Z" fill="#008080"/>
+  </g>
+</svg>
